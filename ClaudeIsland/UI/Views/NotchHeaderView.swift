@@ -8,58 +8,55 @@
 import Combine
 import SwiftUI
 
-// MARK: - Claude Sparkle Icon (customization)
+// MARK: - Four-Leaf Clover Icon (customization)
 //
-// Replaced original pixel-art crab with a 6-petal Claude-brand sparkle.
-// Each petal is a narrow diamond radiating from center at 60° intervals.
-// When `animateLegs == true`, each petal fades opacity independently with
-// a 0.5s phase offset, creating a "chasing glow" effect. Pure Core Animation
-// (no Canvas redraws, no timers) — static state is ~0% CPU, animated state
-// is ~0.1% CPU (opacity is a GPU-accelerated layer property).
+// Replaced earlier 6-petal sparkle (too thin) and 4-circle attempt (not
+// petal-like enough) with cubic-bezier teardrop petals — narrow at base,
+// widest around the middle, rounded at tip. Four petals at 90° intervals
+// radiate from shape center. Color stays Claude orange for brand
+// consistency. Rotates once per 10 seconds (nearly imperceptible) —
+// adds life without distracting.
 //
-// Struct name and init signature preserved for binary compatibility with
-// NotchView.swift call sites (ClaudeCrabIcon(size:color:animateLegs:)).
+// Struct name `ClaudeCrabIcon` and init signature preserved for binary
+// compatibility with NotchView.swift call sites.
 
-private struct ClaudeSparklePetal: Shape {
-    let petalIndex: Int
+private struct CloverLeaf: Shape {
+    let leafIndex: Int  // 0=N, 1=E, 2=S, 3=W
 
     func path(in rect: CGRect) -> Path {
-        var path = Path()
         let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) / 2
-        let angleRad = Double(petalIndex) * .pi / 3.0  // 60° spacing for 6 petals
+        let r = min(rect.width, rect.height) / 2
+        // Angle for this leaf — index 0 points North (up in screen coords)
+        let angleRad = Double(leafIndex) * .pi / 2 - .pi / 2
 
-        let cosA = CGFloat(cos(angleRad))
-        let sinA = CGFloat(sin(angleRad))
+        // Petal dimensions in local coords (origin = shape center, +x = leaf tip)
+        let length = r * 0.95   // leaf length from base to tip
+        let width = r * 0.62    // max leaf width (perpendicular)
 
-        // Tip of petal (outer point)
-        let tip = CGPoint(
-            x: center.x + radius * cosA,
-            y: center.y + radius * sinA
+        var localPath = Path()
+        localPath.move(to: .zero)
+
+        // Top half: cubic bezier from base (0,0) to tip (length, 0).
+        // Control points create a rapid bulge then smooth taper to rounded tip.
+        localPath.addCurve(
+            to: CGPoint(x: length, y: 0),
+            control1: CGPoint(x: length * 0.10, y: -width * 0.85),
+            control2: CGPoint(x: length * 0.90, y: -width * 0.55)
+        )
+        // Bottom half: mirror — from tip back to base
+        localPath.addCurve(
+            to: .zero,
+            control1: CGPoint(x: length * 0.90, y: width * 0.55),
+            control2: CGPoint(x: length * 0.10, y: width * 0.85)
         )
 
-        // Base width — narrow diamond shape
-        let baseRadius = radius * 0.22
-        let perpCos = CGFloat(cos(angleRad + .pi / 2))
-        let perpSin = CGFloat(sin(angleRad + .pi / 2))
+        // Transform: rotate the local leaf to its compass direction, then
+        // translate the shape's origin (0,0) to the rect's center.
+        let transform = CGAffineTransform.identity
+            .translatedBy(x: center.x, y: center.y)
+            .rotated(by: CGFloat(angleRad))
 
-        let leftBase = CGPoint(
-            x: center.x + baseRadius * perpCos,
-            y: center.y + baseRadius * perpSin
-        )
-        let rightBase = CGPoint(
-            x: center.x - baseRadius * perpCos,
-            y: center.y - baseRadius * perpSin
-        )
-
-        // Diamond petal: center -> left base -> tip -> right base -> close
-        path.move(to: center)
-        path.addLine(to: leftBase)
-        path.addLine(to: tip)
-        path.addLine(to: rightBase)
-        path.closeSubpath()
-
-        return path
+        return localPath.applying(transform)
     }
 }
 
@@ -68,7 +65,7 @@ struct ClaudeCrabIcon: View {
     let color: Color
     var animateLegs: Bool = false
 
-    @State private var glowing: Bool = false
+    @State private var rotation: Double = 0
 
     init(size: CGFloat = 16, color: Color = Color(red: 0.85, green: 0.47, blue: 0.34), animateLegs: Bool = false) {
         self.size = size
@@ -78,48 +75,36 @@ struct ClaudeCrabIcon: View {
 
     var body: some View {
         ZStack {
-            ForEach(0..<6, id: \.self) { i in
-                ClaudeSparklePetal(petalIndex: i)
+            ForEach(0..<4, id: \.self) { i in
+                CloverLeaf(leafIndex: i)
                     .fill(color)
-                    .opacity(animateLegs && glowing ? 1.0 : (animateLegs ? 0.3 : 0.85))
-                    .animation(
-                        animateLegs
-                            ? .easeInOut(duration: 1.5)
-                                .repeatForever(autoreverses: true)
-                                .delay(Double(i) * 0.5)
-                            : .default,
-                        value: glowing
-                    )
             }
         }
         .frame(width: size * (66.0 / 52.0), height: size)
+        .rotationEffect(.degrees(rotation))
         .onAppear {
-            if animateLegs {
-                glowing = true
+            withAnimation(
+                .linear(duration: 10.0).repeatForever(autoreverses: false)
+            ) {
+                rotation = 360
             }
-        }
-        .onChange(of: animateLegs) { _, newValue in
-            glowing = newValue
         }
     }
 }
 
-// MARK: - Loading Ring Icon (replaces pixel-art question mark)
+// MARK: - Bouncing Dots Icon (replaces pixel-art question mark)
 //
-// Customization: replaced PermissionIndicatorIcon's pixel-art question mark
-// with a classic rotating loading ring (3/4 arc). Drawn once as a Circle
-// shape with trim + stroke, animated via rotationEffect. Pure GPU transform.
-//
-// Appears in the header only when `hasPendingPermission == true`. With the
-// auto-allow hook patch, this should be extremely rare — but when it briefly
-// flashes during PreToolUse -> auto-allow, users see a smooth spinner instead
-// of an ugly pixel question mark.
+// Three dots with phase-offset bouncing — the classic "thinking/typing/
+// working" visual used across modern messaging UIs. Activates only when
+// `hasPendingPermission == true`; with the auto-allow hook patch this
+// rarely shows, but when it does, users see a familiar "working" animation
+// instead of an ugly pixel question mark.
 
 struct PermissionIndicatorIcon: View {
     let size: CGFloat
     let color: Color
 
-    @State private var rotation: Double = 0
+    @State private var bouncing: Bool = false
 
     init(size: CGFloat = 14, color: Color = Color(red: 0.85, green: 0.47, blue: 0.34)) {
         self.size = size
@@ -127,64 +112,54 @@ struct PermissionIndicatorIcon: View {
     }
 
     var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.75)  // 3/4 arc leaves a visible gap
-            .stroke(
-                color,
-                style: StrokeStyle(lineWidth: 1.8, lineCap: .round)
-            )
-            .frame(width: size, height: size)
-            .rotationEffect(.degrees(rotation))
-            .onAppear {
-                withAnimation(
-                    .linear(duration: 1.2).repeatForever(autoreverses: false)
-                ) {
-                    rotation = 360
-                }
+        HStack(spacing: size * 0.12) {
+            ForEach(0..<3, id: \.self) { i in
+                Circle()
+                    .fill(color)
+                    .frame(width: size * 0.22, height: size * 0.22)
+                    .offset(y: bouncing ? -size * 0.18 : size * 0.18)
+                    .animation(
+                        .easeInOut(duration: 0.45)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(i) * 0.13),
+                        value: bouncing
+                    )
             }
+        }
+        .frame(width: size, height: size)
+        .onAppear { bouncing = true }
     }
 }
 
-// MARK: - Ready For Input Icon (unchanged)
+// MARK: - Ready For Input Icon (upgraded)
 //
-// Pixel art checkmark shown on the right side of the header when a session
-// is waiting for user input. Kept as original — no ugly-factor complaint.
+// Customization: replaced 7-pixel-dot checkmark with SF Symbol
+// `checkmark.circle.fill` — a filled green circle with a white checkmark.
+// Much more visible than the original pixel art. Adds a subtle scale pulse
+// (1.0 ↔ 1.18, 0.9s period) to draw attention when it first appears.
+// Uses Core Animation scale transform = zero CPU cost.
 
 struct ReadyForInputIndicatorIcon: View {
     let size: CGFloat
     let color: Color
+
+    @State private var pulsing: Bool = false
 
     init(size: CGFloat = 14, color: Color = TerminalColors.green) {
         self.size = size
         self.color = color
     }
 
-    // Checkmark shape pixel positions (at 30x30 scale)
-    private let pixels: [(CGFloat, CGFloat)] = [
-        (5, 15),                    // Start of checkmark
-        (9, 19),                    // Down stroke
-        (13, 23),                   // Bottom of checkmark
-        (17, 19),                   // Up stroke begins
-        (21, 15),                   // Up stroke
-        (25, 11),                   // Up stroke
-        (29, 7)                     // End of checkmark
-    ]
-
     var body: some View {
-        Canvas { context, canvasSize in
-            let scale = size / 30.0
-            let pixelSize: CGFloat = 4 * scale
-
-            for (x, y) in pixels {
-                let rect = CGRect(
-                    x: x * scale - pixelSize / 2,
-                    y: y * scale - pixelSize / 2,
-                    width: pixelSize,
-                    height: pixelSize
-                )
-                context.fill(Path(rect), with: .color(color))
-            }
-        }
-        .frame(width: size, height: size)
+        Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: size * 1.15, weight: .bold))
+            .foregroundColor(color)
+            .scaleEffect(pulsing ? 1.18 : 1.0)
+            .animation(
+                .easeInOut(duration: 0.9).repeatForever(autoreverses: true),
+                value: pulsing
+            )
+            .frame(width: size, height: size)
+            .onAppear { pulsing = true }
     }
 }
