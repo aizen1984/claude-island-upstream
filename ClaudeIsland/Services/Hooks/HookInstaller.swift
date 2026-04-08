@@ -22,8 +22,11 @@ struct HookInstaller {
             withIntermediateDirectories: true
         )
 
-        if let bundled = Bundle.main.url(forResource: "claude-island-state", withExtension: "py") {
-            try? FileManager.default.removeItem(at: pythonScript)
+        // Customization: only install bundled template if hook file is missing.
+        // Respects user customizations (e.g., auto-allow patches) across app restarts.
+        // To force reinstall, user must manually delete the file first.
+        if !FileManager.default.fileExists(atPath: pythonScript.path),
+           let bundled = Bundle.main.url(forResource: "claude-island-state", withExtension: "py") {
             try? FileManager.default.copyItem(at: bundled, to: pythonScript)
             try? FileManager.default.setAttributes(
                 [.posixPermissions: 0o755],

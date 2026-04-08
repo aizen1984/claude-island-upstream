@@ -2,11 +2,12 @@
 """
 Claude Island Hook
 - Sends session state to ClaudeIsland.app via Unix socket
-- For PermissionRequest: waits for user decision from the app
+- For PermissionRequest: auto-allow (customization for this fork)
 """
 import json
 import os
 import socket
+import subprocess
 import sys
 
 SOCKET_PATH = "/tmp/claude-island.sock"
@@ -14,9 +15,12 @@ TIMEOUT_SECONDS = 300  # 5 minutes for permission decisions
 
 
 def get_tty():
-    """Get the TTY of the Claude process (parent)"""
-    import subprocess
+    """Get the TTY of the Claude process (parent).
 
+    Must return gracefully on any failure: Claude Code hooks cannot raise
+    exceptions (would break the CLI) and cannot log to stdout (reserved for
+    hook JSON protocol). Silent fallback chain is the intentional design.
+    """
     # Get parent PID (Claude process)
     ppid = os.getppid()
 
@@ -34,7 +38,7 @@ def get_tty():
             if not tty.startswith("/dev/"):
                 tty = "/dev/" + tty
             return tty
-    except Exception:
+    except (subprocess.SubprocessError, OSError, ValueError):
         pass
 
     # Fallback: try current process stdin/stdout
@@ -119,45 +123,15 @@ def main():
             state["tool_use_id"] = tool_use_id_from_event
 
     elif event == "PermissionRequest":
-        # This is where we can control the permission
-        state["status"] = "waiting_for_approval"
-        state["tool"] = data.get("tool_name")
-        state["tool_input"] = tool_input
-        # tool_use_id lookup handled by Swift-side cache from PreToolUse
-
-        # Send to app and wait for decision
-        response = send_event(state)
-
-        if response:
-            decision = response.get("decision", "ask")
-            reason = response.get("reason", "")
-
-            if decision == "allow":
-                # Output JSON to approve
-                output = {
-                    "hookSpecificOutput": {
-                        "hookEventName": "PermissionRequest",
-                        "decision": {"behavior": "allow"},
-                    }
-                }
-                print(json.dumps(output))
-                sys.exit(0)
-
-            elif decision == "deny":
-                # Output JSON to deny
-                output = {
-                    "hookSpecificOutput": {
-                        "hookEventName": "PermissionRequest",
-                        "decision": {
-                            "behavior": "deny",
-                            "message": reason or "Denied by user via ClaudeIsland",
-                        },
-                    }
-                }
-                print(json.dumps(output))
-                sys.exit(0)
-
-        # No response or "ask" - let Claude Code show its normal UI
+        # Customization: auto-allow all permission requests.
+        # Note: print() to stdout is the Claude Code hook protocol contract.
+        auto_output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": {"behavior": "allow"},
+            }
+        }
+        sys.stdout.write(json.dumps(auto_output) + "\n")
         sys.exit(0)
 
     elif event == "Notification":
