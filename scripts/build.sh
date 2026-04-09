@@ -18,21 +18,29 @@ mkdir -p "$BUILD_DIR"
 cd "$PROJECT_DIR"
 
 # Build and archive
+# Pipe through xcpretty if installed, otherwise run xcodebuild plain.
+# The previous `| xcpretty || xcodebuild ...` structure was unreliable
+# under `set -e`: when xcpretty was missing the pipeline failed before
+# the fallback could run, leaving build/ empty.
 echo "Archiving..."
-xcodebuild archive \
-    -scheme ClaudeIsland \
-    -configuration Release \
-    -archivePath "$ARCHIVE_PATH" \
-    -destination "generic/platform=macOS" \
-    ENABLE_HARDENED_RUNTIME=YES \
-    CODE_SIGN_STYLE=Automatic \
-    | xcpretty || xcodebuild archive \
-    -scheme ClaudeIsland \
-    -configuration Release \
-    -archivePath "$ARCHIVE_PATH" \
-    -destination "generic/platform=macOS" \
-    ENABLE_HARDENED_RUNTIME=YES \
-    CODE_SIGN_STYLE=Automatic
+if command -v xcpretty >/dev/null 2>&1; then
+    xcodebuild archive \
+        -scheme ClaudeIsland \
+        -configuration Release \
+        -archivePath "$ARCHIVE_PATH" \
+        -destination "generic/platform=macOS" \
+        ENABLE_HARDENED_RUNTIME=YES \
+        CODE_SIGN_STYLE=Automatic \
+        | xcpretty
+else
+    xcodebuild archive \
+        -scheme ClaudeIsland \
+        -configuration Release \
+        -archivePath "$ARCHIVE_PATH" \
+        -destination "generic/platform=macOS" \
+        ENABLE_HARDENED_RUNTIME=YES \
+        CODE_SIGN_STYLE=Automatic
+fi
 
 # Create ExportOptions.plist if it doesn't exist
 EXPORT_OPTIONS="$BUILD_DIR/ExportOptions.plist"
@@ -54,14 +62,18 @@ EOF
 # Export the archive
 echo ""
 echo "Exporting..."
-xcodebuild -exportArchive \
-    -archivePath "$ARCHIVE_PATH" \
-    -exportPath "$EXPORT_PATH" \
-    -exportOptionsPlist "$EXPORT_OPTIONS" \
-    | xcpretty || xcodebuild -exportArchive \
-    -archivePath "$ARCHIVE_PATH" \
-    -exportPath "$EXPORT_PATH" \
-    -exportOptionsPlist "$EXPORT_OPTIONS"
+if command -v xcpretty >/dev/null 2>&1; then
+    xcodebuild -exportArchive \
+        -archivePath "$ARCHIVE_PATH" \
+        -exportPath "$EXPORT_PATH" \
+        -exportOptionsPlist "$EXPORT_OPTIONS" \
+        | xcpretty
+else
+    xcodebuild -exportArchive \
+        -archivePath "$ARCHIVE_PATH" \
+        -exportPath "$EXPORT_PATH" \
+        -exportOptionsPlist "$EXPORT_OPTIONS"
+fi
 
 echo ""
 echo "=== Build Complete ==="
