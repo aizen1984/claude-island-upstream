@@ -249,7 +249,11 @@ struct NotchView: View {
             // Left side - crab + optional permission indicator (visible when processing, pending, or waiting for input)
             if showClosedActivity {
                 HStack(spacing: 4) {
-                    ClaudeCrabIcon(size: 14, animateLegs: isProcessing)
+                    // Customization: drive clover animation directly from session phase
+                    // (isAnyProcessing), not activity coordinator flag. Ensures clover keeps
+                    // animating when another session is still running even while this one has
+                    // completed (so both "still running" + "done" signals are visible).
+                    ClaudeCrabIcon(size: 14, animateLegs: isAnyProcessing)
                         .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showClosedActivity)
 
                     // Permission indicator only (amber) - waiting for input shows checkmark on right
@@ -278,15 +282,15 @@ struct NotchView: View {
                     .frame(width: closedNotchSize.width - cornerRadiusInsets.closed.top + (isBouncing ? 16 : 0))
             }
 
-            // Right side - spinner when processing/pending, checkmark when waiting for input
+            // Right side - checkmark has priority so "done" state is visible
+            // even when other concurrent sessions are still processing.
             if showClosedActivity {
-                if isProcessing || hasPendingPermission {
-                    ProcessingSpinner()
+                if hasWaitingForInput {
+                    ReadyForInputIndicatorIcon(size: 14, color: TerminalColors.green)
                         .matchedGeometryEffect(id: "spinner", in: activityNamespace, isSource: showClosedActivity)
                         .frame(width: viewModel.status == .opened ? 20 : sideWidth)
-                } else if hasWaitingForInput {
-                    // Checkmark for waiting-for-input on the right side
-                    ReadyForInputIndicatorIcon(size: 14, color: TerminalColors.green)
+                } else if isProcessing || hasPendingPermission {
+                    ProcessingSpinner()
                         .matchedGeometryEffect(id: "spinner", in: activityNamespace, isSource: showClosedActivity)
                         .frame(width: viewModel.status == .opened ? 20 : sideWidth)
                 }
@@ -372,13 +376,15 @@ struct NotchView: View {
     // MARK: - Event Handlers
 
     private func handleProcessingChange() {
-        if isAnyProcessing || hasPendingPermission {
+        if hasWaitingForInput {
+            // Customization: waiting-for-input has priority over processing,
+            // so a "done" checkmark is visible even if another concurrent
+            // session is still running tool calls.
+            activityCoordinator.hideActivity()
+            isVisible = true
+        } else if isAnyProcessing || hasPendingPermission {
             // Show claude activity when processing or waiting for permission
             activityCoordinator.showActivity(type: .claude)
-            isVisible = true
-        } else if hasWaitingForInput {
-            // Keep visible for waiting-for-input but hide the processing spinner
-            activityCoordinator.hideActivity()
             isVisible = true
         } else {
             // Hide activity when done
