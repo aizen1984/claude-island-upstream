@@ -40,6 +40,13 @@ enum SessionFocusService {
     /// Without this, `.activateIgnoringOtherApps` on the target terminal
     /// is a no-op on macOS 14+ due to tightened activation semantics.
     static func focus(_ session: SessionState) async {
+        // Acknowledge this session — hides its checkmark from the notch
+        // and removes it from the Cmd+Shift+U cycle pool. The ack auto-
+        // clears via AcknowledgmentTracker.reconcile when the session
+        // leaves the attention states, so a future completion re-arms
+        // the indicator.
+        AcknowledgmentTracker.shared.acknowledge(session.sessionId)
+
         NSApp.deactivate()
 
         // Brief delay so WindowServer processes NSApp.deactivate before the
@@ -62,27 +69,36 @@ enum SessionFocusService {
         }
     }
 
-    /// Pick the most recently completed (waiting-for-input) session and
-    /// focus its terminal. No-op + system beep if nothing is completed.
+    /// Focus the next unacknowledged completed session.
     ///
-    /// Completion criterion: `SessionPhase == .waitingForInput`.
-    /// `.waitingForApproval` is intentionally NOT included here because
-    /// the user has a separate auto-approval flow for permission prompts.
-    static func activateMostRecentCompleted() async {
-        let completed = SessionStore.shared.currentSessions
+    /// "Unacknowledged" = in .waitingForInput AND not in
+    /// `AcknowledgmentTracker.dismissed`. Because `focus(_:)` acknowledges
+    /// the target, each hotkey press naturally advances: press 1 visits
+    /// the newest, press 2 visits the next newest, … until the cycle is
+    /// drained and a beep signals "no more pending work".
+    ///
+    /// Sessions are sorted by `lastActivity` descending so newly completed
+    /// work is always visited first, even if it arrives mid-cycle.
+    ///
+    /// `.waitingForApproval` is intentionally NOT included here — the user
+    /// has a separate auto-approval flow for permission prompts.
+    static func cycleToNextCompletedSession() async {
+        let tracker = AcknowledgmentTracker.shared
+        let candidates = SessionStore.shared.currentSessions
             .filter { state in
                 if case .waitingForInput = state.phase { return true }
                 return false
             }
+            .filter { !tracker.isAcknowledged($0.sessionId) }
             .sorted { $0.lastActivity > $1.lastActivity }
 
-        guard let target = completed.first else {
-            Self.logger.info("activateMostRecentCompleted: no completed sessions, beeping")
+        guard let target = candidates.first else {
+            Self.logger.info("cycleToNextCompletedSession: no unacknowledged completed sessions, beeping")
             NSSound.beep()
             return
         }
 
-        Self.logger.info("activateMostRecentCompleted: target sessionId=\(target.sessionId, privacy: .public) project=\(target.projectName, privacy: .public) candidates=\(completed.count)")
+        Self.logger.info("cycleToNextCompletedSession: target=\(target.sessionId, privacy: .public) remaining=\(candidates.count)")
         await focus(target)
     }
 }

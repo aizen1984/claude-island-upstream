@@ -94,7 +94,6 @@ class NotchViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private let events = EventMonitors.shared
-    private var hoverTimer: DispatchWorkItem?
 
     // MARK: - Initialization
 
@@ -157,19 +156,10 @@ class NotchViewModel: ObservableObject {
 
         isHovering = newHovering
 
-        // Cancel any pending hover timer
-        hoverTimer?.cancel()
-        hoverTimer = nil
-
-        // Start hover timer to auto-expand after 1 second
-        if isHovering && (status == .closed || status == .popping) {
-            let workItem = DispatchWorkItem { [weak self] in
-                guard let self = self, self.isHovering else { return }
-                self.notchOpen(reason: .hover)
-            }
-            hoverTimer = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: workItem)
-        }
+        // Customization: hover NO LONGER auto-expands the notch.
+        // The island never enlarges itself — the only way to open it is
+        // an explicit click. isHovering is still tracked so the shadow
+        // effect in NotchView can respond to hover (visual feedback only).
     }
 
     private func handleMouseDown() {
@@ -282,14 +272,5 @@ class NotchViewModel: ObservableObject {
     func exitChat() {
         currentChatSession = nil
         contentType = .instances
-    }
-
-    /// Perform boot animation: expand briefly then collapse
-    func performBootAnimation() {
-        notchOpen(reason: .boot)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self = self, self.openReason == .boot else { return }
-            self.notchClose()
-        }
     }
 }

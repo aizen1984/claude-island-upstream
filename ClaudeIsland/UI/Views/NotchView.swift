@@ -20,12 +20,10 @@ struct NotchView: View {
     @StateObject private var sessionMonitor = ClaudeSessionMonitor()
     @StateObject private var activityCoordinator = NotchActivityCoordinator.shared
     @ObservedObject private var updateManager = UpdateManager.shared
-    @State private var previousPendingIds: Set<String> = []
+    @ObservedObject private var ackTracker = AcknowledgmentTracker.shared
     @State private var previousWaitingForInputIds: Set<String> = []
-    @State private var waitingForInputTimestamps: [String: Date] = [:]  // sessionId -> when it entered waitingForInput
     @State private var isVisible: Bool = false
     @State private var isHovering: Bool = false
-    @State private var isBouncing: Bool = false
 
     @Namespace private var activityNamespace
 
@@ -34,24 +32,23 @@ struct NotchView: View {
         sessionMonitor.instances.contains { $0.phase == .processing || $0.phase == .compacting }
     }
 
-    /// Whether any Claude session has a pending permission request
-    private var hasPendingPermission: Bool {
-        sessionMonitor.instances.contains { $0.phase.isWaitingForApproval }
+    /// Sessions that need user attention — completion (.waitingForInput) or
+    /// permission ask (.waitingForApproval) — that have NOT yet been
+    /// acknowledged by the user (via ⌘⇧U focus or clicking ✅).
+    /// Each one renders as its own checkmark in the compact header.
+    ///
+    /// Customization: unified "completion" and "ask" events into a single
+    /// checkmark indicator per user request — the island never auto-expands;
+    /// it only shows N checkmarks = N unseen sessions. Acknowledging a
+    /// session removes its checkmark until the next fresh completion.
+    private var attentionSessions: [SessionState] {
+        sessionMonitor.pendingInstances.filter {
+            !ackTracker.isAcknowledged($0.sessionId)
+        }
     }
 
-    /// Whether any Claude session is waiting for user input (done/ready state) within the display window
-    private var hasWaitingForInput: Bool {
-        let now = Date()
-        let displayDuration: TimeInterval = 30  // Show checkmark for 30 seconds
-
-        return sessionMonitor.instances.contains { session in
-            guard session.phase == .waitingForInput else { return false }
-            // Only show if within the 30-second display window
-            if let enteredAt = waitingForInputTimestamps[session.stableId] {
-                return now.timeIntervalSince(enteredAt) < displayDuration
-            }
-            return false
-        }
+    private var hasAttention: Bool {
+        !attentionSessions.isEmpty
     }
 
     // MARK: - Sizing
@@ -63,34 +60,40 @@ struct NotchView: View {
         )
     }
 
-    /// Extra width for expanding activities (like Dynamic Island)
+    /// Extra width for the compact header's right-side indicators.
+    ///
+    /// Layout: base slot for the crab (left) + dynamic slot for N checkmarks
+    /// (right). Each checkmark is `checkmarkIconSize` wide with
+    /// `checkmarkSpacing` between; the block also has its own side padding.
+    /// When there are no attention sessions we fall back to a fixed-width
+    /// slot for the processing progress bar (if processing).
     private var expansionWidth: CGFloat {
-        // Permission indicator adds width on left side only
-        let permissionIndicatorWidth: CGFloat = hasPendingPermission ? 18 : 0
+        let leftCrabSlot: CGFloat = max(0, closedNotchSize.height - 12) + 10
 
-        // Expand for processing activity
-        if activityCoordinator.expandingActivity.show {
-            switch activityCoordinator.expandingActivity.type {
-            case .claude:
-                let baseWidth = 2 * max(0, closedNotchSize.height - 12) + 20
-                return baseWidth + permissionIndicatorWidth
-            case .none:
-                break
-            }
+        if hasAttention {
+            let count = CGFloat(attentionSessions.count)
+            let checkmarksWidth = count * Self.checkmarkIconSize
+                + max(0, count - 1) * Self.checkmarkSpacing
+                + Self.checkmarkBlockPadding
+            return leftCrabSlot + checkmarksWidth
         }
 
-        // Expand for pending permissions (left indicator) or waiting for input (checkmark on right)
-        if hasPendingPermission {
-            return 2 * max(0, closedNotchSize.height - 12) + 20 + permissionIndicatorWidth
-        }
-
-        // Waiting for input just shows checkmark on right, no extra left indicator
-        if hasWaitingForInput {
+        // Processing (no completions): fixed-width slot for the progress bar.
+        if isProcessing {
             return 2 * max(0, closedNotchSize.height - 12) + 20
         }
 
         return 0
     }
+
+    /// Layout constants for the multi-checkmark indicator.
+    /// Tuned for the Dynamic Island aesthetic: thin SF Symbol checkmark
+    /// glyphs (no filled circle background), small size, tight spacing.
+    /// The filled-circle variant looked like approval badges — too loud
+    /// against the black notch.
+    private static let checkmarkIconSize: CGFloat = 11
+    private static let checkmarkSpacing: CGFloat = 5
+    private static let checkmarkBlockPadding: CGFloat = 10
 
     private var notchSize: CGSize {
         switch viewModel.status {
@@ -169,9 +172,8 @@ struct NotchView: View {
                     .animation(viewModel.status == .opened ? openAnimation : closeAnimation, value: viewModel.status)
                     .animation(openAnimation, value: notchSize) // Animate container size changes between content types
                     .animation(.smooth, value: activityCoordinator.expandingActivity)
-                    .animation(.smooth, value: hasPendingPermission)
-                    .animation(.smooth, value: hasWaitingForInput)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.5), value: isBouncing)
+                    .animation(.smooth, value: hasAttention)
+                    .animation(.smooth, value: attentionSessions.count)
                     .contentShape(Rectangle())
                     .onHover { hovering in
                         withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
@@ -198,9 +200,6 @@ struct NotchView: View {
         .onChange(of: viewModel.status) { oldStatus, newStatus in
             handleStatusChange(from: oldStatus, to: newStatus)
         }
-        .onChange(of: sessionMonitor.pendingInstances) { _, sessions in
-            handlePendingSessionsChange(sessions)
-        }
         .onChange(of: sessionMonitor.instances) { _, instances in
             handleProcessingChange()
             handleWaitingForInputChange(instances)
@@ -213,9 +212,10 @@ struct NotchView: View {
         activityCoordinator.expandingActivity.show && activityCoordinator.expandingActivity.type == .claude
     }
 
-    /// Whether to show the expanded closed state (processing, pending permission, or waiting for input)
+    /// Whether to show the expanded closed state (processing or any
+    /// sessions needing attention — the latter renders as N checkmarks).
     private var showClosedActivity: Bool {
-        isProcessing || hasPendingPermission || hasWaitingForInput
+        isProcessing || hasAttention
     }
 
     @ViewBuilder
@@ -246,24 +246,14 @@ struct NotchView: View {
     @ViewBuilder
     private var headerRow: some View {
         HStack(spacing: 0) {
-            // Left side - crab + optional permission indicator (visible when processing, pending, or waiting for input)
+            // Left side - crab only. The permission indicator was removed in
+            // the "no self-enlarge" refactor — both completion and ask events
+            // now render as checkmarks on the right.
             if showClosedActivity {
-                HStack(spacing: 4) {
-                    // Customization: drive clover animation directly from session phase
-                    // (isAnyProcessing), not activity coordinator flag. Ensures clover keeps
-                    // animating when another session is still running even while this one has
-                    // completed (so both "still running" + "done" signals are visible).
-                    ClaudeCrabIcon(size: 14, animateLegs: isAnyProcessing)
-                        .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showClosedActivity)
-
-                    // Permission indicator only (amber) - waiting for input shows checkmark on right
-                    if hasPendingPermission {
-                        PermissionIndicatorIcon(size: 14, color: Color(red: 0.85, green: 0.47, blue: 0.34))
-                            .matchedGeometryEffect(id: "status-indicator", in: activityNamespace, isSource: showClosedActivity)
-                    }
-                }
-                .frame(width: viewModel.status == .opened ? nil : sideWidth + (hasPendingPermission ? 18 : 0))
-                .padding(.leading, viewModel.status == .opened ? 8 : 0)
+                ClaudeCrabIcon(size: 14, animateLegs: isAnyProcessing)
+                    .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showClosedActivity)
+                    .frame(width: viewModel.status == .opened ? nil : sideWidth)
+                    .padding(.leading, viewModel.status == .opened ? 8 : 0)
             }
 
             // Center content
@@ -276,20 +266,31 @@ struct NotchView: View {
                     .fill(.clear)
                     .frame(width: closedNotchSize.width - 20)
             } else {
-                // Closed with activity: black spacer (with optional bounce)
+                // Closed with activity: black spacer. No bounce — the island
+                // never animates its own width beyond what the indicators need.
                 Rectangle()
                     .fill(.black)
-                    .frame(width: closedNotchSize.width - cornerRadiusInsets.closed.top + (isBouncing ? 16 : 0))
+                    .frame(width: closedNotchSize.width - cornerRadiusInsets.closed.top)
             }
 
-            // Right side - checkmark has priority so "done" state is visible
-            // even when other concurrent sessions are still processing.
+            // Right side - N checkmarks, one per session needing attention.
+            // Checkmark has priority over the processing progress bar so a
+            // "done" (or "ask") signal is visible even while other concurrent
+            // sessions are still running tool calls.
             if showClosedActivity {
-                if hasWaitingForInput {
-                    ReadyForInputIndicatorIcon(size: 14, color: TerminalColors.green)
-                        .matchedGeometryEffect(id: "spinner", in: activityNamespace, isSource: showClosedActivity)
-                        .frame(width: viewModel.status == .opened ? 20 : sideWidth)
-                } else if isProcessing || hasPendingPermission {
+                if hasAttention {
+                    HStack(spacing: Self.checkmarkSpacing) {
+                        ForEach(attentionSessions, id: \.stableId) { _ in
+                            Image(systemName: "checkmark")
+                                .font(.system(
+                                    size: Self.checkmarkIconSize,
+                                    weight: .semibold
+                                ))
+                                .foregroundColor(TerminalColors.green)
+                        }
+                    }
+                    .padding(.horizontal, Self.checkmarkBlockPadding / 2)
+                } else if isProcessing {
                     // Customization: replaced ugly unicode-character spinner
                     // with a looping progress bar (Claude orange).
                     HeaderProgressBar(tint: Color(red: 0.85, green: 0.47, blue: 0.34))
@@ -380,14 +381,14 @@ struct NotchView: View {
     // MARK: - Event Handlers
 
     private func handleProcessingChange() {
-        if hasWaitingForInput {
-            // Customization: waiting-for-input has priority over processing,
-            // so a "done" checkmark is visible even if another concurrent
-            // session is still running tool calls.
+        if hasAttention {
+            // Attention (completion or ask) has priority over processing,
+            // so checkmarks are visible even if another concurrent session
+            // is still running tool calls.
             activityCoordinator.hideActivity()
             isVisible = true
-        } else if isAnyProcessing || hasPendingPermission {
-            // Show claude activity when processing or waiting for permission
+        } else if isAnyProcessing {
+            // Show claude activity when processing.
             activityCoordinator.showActivity(type: .claude)
             isVisible = true
         } else {
@@ -398,7 +399,7 @@ struct NotchView: View {
             // Don't hide on non-notched devices - users need a visible target
             if viewModel.status == .closed && viewModel.hasPhysicalNotch {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    if !isAnyProcessing && !hasPendingPermission && !hasWaitingForInput && viewModel.status == .closed {
+                    if !isAnyProcessing && !hasAttention && viewModel.status == .closed {
                         isVisible = false
                     }
                 }
@@ -410,83 +411,42 @@ struct NotchView: View {
         switch newStatus {
         case .opened, .popping:
             isVisible = true
-            // Clear waiting-for-input timestamps only when manually opened (user acknowledged)
-            if viewModel.openReason == .click || viewModel.openReason == .hover {
-                waitingForInputTimestamps.removeAll()
-            }
         case .closed:
             // Don't hide on non-notched devices - users need a visible target
             guard viewModel.hasPhysicalNotch else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                if viewModel.status == .closed && !isAnyProcessing && !hasPendingPermission && !hasWaitingForInput && !activityCoordinator.expandingActivity.show {
+                if viewModel.status == .closed && !isAnyProcessing && !hasAttention && !activityCoordinator.expandingActivity.show {
                     isVisible = false
                 }
             }
         }
     }
 
-    private func handlePendingSessionsChange(_ sessions: [SessionState]) {
-        let currentIds = Set(sessions.map { $0.stableId })
-        let newPendingIds = currentIds.subtracting(previousPendingIds)
-
-        if !newPendingIds.isEmpty &&
-           viewModel.status == .closed &&
-           !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace() {
-            viewModel.notchOpen(reason: .notification)
-        }
-
-        previousPendingIds = currentIds
-    }
-
+    /// Play notification sound when a session newly enters waitingForInput,
+    /// and reconcile the acknowledgment tracker so stale acks are cleared.
+    /// Sound only — no bounce, no auto-expand. Per the "no self-enlarge"
+    /// refactor, visual feedback is limited to the checkmark appearing.
     private func handleWaitingForInputChange(_ instances: [SessionState]) {
-        // Get sessions that are now waiting for input
+        // Reconcile ack tracker: drop dismissed entries whose sessions are
+        // no longer in any attention state. When such a session later enters
+        // .waitingForInput again, a fresh checkmark appears.
+        let attentionIds = Set(instances.filter { $0.needsAttention }.map { $0.sessionId })
+        ackTracker.reconcile(keeping: attentionIds)
+
         let waitingForInputSessions = instances.filter { $0.phase == .waitingForInput }
         let currentIds = Set(waitingForInputSessions.map { $0.stableId })
         let newWaitingIds = currentIds.subtracting(previousWaitingForInputIds)
 
-        // Track timestamps for newly waiting sessions
-        let now = Date()
-        for session in waitingForInputSessions where newWaitingIds.contains(session.stableId) {
-            waitingForInputTimestamps[session.stableId] = now
-        }
-
-        // Clean up timestamps for sessions no longer waiting
-        let staleIds = Set(waitingForInputTimestamps.keys).subtracting(currentIds)
-        for staleId in staleIds {
-            waitingForInputTimestamps.removeValue(forKey: staleId)
-        }
-
-        // Bounce the notch when a session newly enters waitingForInput state
-        if !newWaitingIds.isEmpty {
-            // Get the sessions that just entered waitingForInput
+        if !newWaitingIds.isEmpty,
+           let soundName = AppSettings.notificationSound.soundName {
             let newlyWaitingSessions = waitingForInputSessions.filter { newWaitingIds.contains($0.stableId) }
-
-            // Play notification sound if the session is not actively focused
-            if let soundName = AppSettings.notificationSound.soundName {
-                // Check if we should play sound (async check for tmux pane focus)
-                Task {
-                    let shouldPlaySound = await shouldPlayNotificationSound(for: newlyWaitingSessions)
-                    if shouldPlaySound {
-                        await MainActor.run {
-                            NSSound(named: soundName)?.play()
-                        }
+            Task {
+                let shouldPlaySound = await shouldPlayNotificationSound(for: newlyWaitingSessions)
+                if shouldPlaySound {
+                    await MainActor.run {
+                        NSSound(named: soundName)?.play()
                     }
                 }
-            }
-
-            // Trigger bounce animation to get user's attention
-            DispatchQueue.main.async {
-                isBouncing = true
-                // Bounce back after a short delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    isBouncing = false
-                }
-            }
-
-            // Schedule hiding the checkmark after 30 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [self] in
-                // Trigger a UI update to re-evaluate hasWaitingForInput
-                handleProcessingChange()
             }
         }
 

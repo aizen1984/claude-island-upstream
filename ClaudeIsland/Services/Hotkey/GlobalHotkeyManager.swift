@@ -28,8 +28,11 @@ final class GlobalHotkeyManager {
     /// Releasing the `HotKey` instance auto-unregisters with Carbon.
     private var activateCompletedHotkey: HotKey?
 
-    /// Register `Cmd+Shift+U` → activate the most recently completed session.
+    /// Register `Cmd+Shift+U` → cycle through completed Claude sessions.
     /// Safe to call multiple times; re-registering replaces the handler.
+    ///
+    /// First press focuses the most recently completed session; repeat
+    /// presses advance through the list and wrap around after the last.
     func registerActivateCompletedSession() {
         // Drop any previous registration first so Carbon doesn't hold
         // a stale handler if this is called twice during app lifetime.
@@ -39,11 +42,11 @@ final class GlobalHotkeyManager {
         hotkey.keyDownHandler = {
             Self.logger.info("Hotkey fired: Cmd+Shift+U")
             Task { @MainActor in
-                await SessionFocusService.activateMostRecentCompleted()
+                await SessionFocusService.cycleToNextCompletedSession()
             }
         }
         activateCompletedHotkey = hotkey
-        Self.logger.info("Hotkey registered: Cmd+Shift+U → activateMostRecentCompleted")
+        Self.logger.info("Hotkey registered: Cmd+Shift+U → cycleToNextCompletedSession")
     }
 
     /// Release all hotkey registrations.
