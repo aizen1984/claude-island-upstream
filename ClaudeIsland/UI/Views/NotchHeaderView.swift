@@ -163,3 +163,39 @@ struct ReadyForInputIndicatorIcon: View {
             .onAppear { pulsing = true }
     }
 }
+
+// MARK: - Header Progress Bar (customization)
+//
+// A continuously looping indeterminate progress bar used as the menu
+// toggle button's visual. Replaces the original tiny line.3.horizontal
+// icon that rendered as an ugly blob at 11px/40% opacity. A bright
+// highlight slides left-to-right continuously on a dimmer track, giving
+// a sense of "always-active" liveness to the notch header.
+//
+// Pure SwiftUI Shape + Core Animation offset = GPU-accelerated, zero CPU.
+
+struct HeaderProgressBar: View {
+    var tint: Color = .white
+    @State private var phase: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { geo in
+            let trackW = geo.size.width
+            let highlightW = trackW * 0.40
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(tint.opacity(0.22))
+                Capsule()
+                    .fill(tint.opacity(0.90))
+                    .frame(width: highlightW)
+                    .offset(x: phase * (trackW + highlightW) - highlightW)
+            }
+            .clipShape(Capsule())
+        }
+        .onAppear {
+            withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
+                phase = 1
+            }
+        }
+    }
+}

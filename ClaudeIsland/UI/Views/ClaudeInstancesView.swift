@@ -296,19 +296,13 @@ struct InstanceRow: View {
     private var stateIndicator: some View {
         switch session.phase {
         case .processing, .compacting:
-            Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(claudeOrange)
-                .onReceive(spinnerTimer) { _ in
-                    spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
-                }
+            // Customization: replaced ugly unicode-character spinner
+            // with a looping progress bar (Claude orange).
+            HeaderProgressBar(tint: claudeOrange)
+                .frame(width: 12, height: 3)
         case .waitingForApproval:
-            Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(TerminalColors.amber)
-                .onReceive(spinnerTimer) { _ in
-                    spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
-                }
+            HeaderProgressBar(tint: TerminalColors.amber)
+                .frame(width: 12, height: 3)
         case .waitingForInput:
             Circle()
                 .fill(TerminalColors.green)

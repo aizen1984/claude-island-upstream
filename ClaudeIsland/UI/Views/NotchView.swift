@@ -290,8 +290,11 @@ struct NotchView: View {
                         .matchedGeometryEffect(id: "spinner", in: activityNamespace, isSource: showClosedActivity)
                         .frame(width: viewModel.status == .opened ? 20 : sideWidth)
                 } else if isProcessing || hasPendingPermission {
-                    ProcessingSpinner()
+                    // Customization: replaced ugly unicode-character spinner
+                    // with a looping progress bar (Claude orange).
+                    HeaderProgressBar(tint: Color(red: 0.85, green: 0.47, blue: 0.34))
                         .matchedGeometryEffect(id: "spinner", in: activityNamespace, isSource: showClosedActivity)
+                        .frame(width: 18, height: 3)
                         .frame(width: viewModel.status == .opened ? 20 : sideWidth)
                 }
             }
@@ -328,9 +331,10 @@ struct NotchView: View {
                 }
             } label: {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: viewModel.contentType == .menu ? "xmark" : "line.3.horizontal")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.4))
+                    // Customization: looping progress bar as the menu button's
+                    // visual. Click behavior preserved by the outer Button.
+                    HeaderProgressBar()
+                        .frame(width: 16, height: 3)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
 
