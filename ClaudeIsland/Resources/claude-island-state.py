@@ -3,9 +3,6 @@
 Claude Island Hook
 - Sends session state to ClaudeIsland.app via Unix socket
 - For PermissionRequest: auto-allow (customization for this fork)
-- For Stop: emits OSC 777 notification via the controlling TTY so the
-  terminal emulator (Ghostty, iTerm2, ...) posts a native macOS
-  notification whose click brings the user back to this exact tab.
 """
 import json
 import os
@@ -76,37 +73,6 @@ def send_event(state):
         return None
     except (socket.error, OSError, json.JSONDecodeError):
         return None
-
-
-def emit_completion_notification(tty, cwd):
-    """Emit OSC 777 notification via the controlling TTY.
-
-    The terminal emulator (Ghostty, iTerm2, etc.) intercepts this escape
-    sequence and posts a native macOS notification. Critically, the
-    notification is "owned" by the terminal, so clicking it focuses the
-    exact tab/window where this sequence was written — which is the
-    same Ghostty tab running Claude Code. No extra focus/AX/yabai logic
-    needed.
-
-    Silent on any failure (TTY unavailable, write error, encoding issue).
-    Never raises; Claude Code hooks must not crash the CLI.
-    """
-    if not tty:
-        return
-    try:
-        # Derive a friendly session label from the working directory.
-        # os.path.basename("/Users/x/IdeaProjects/ai/my_claude") -> "my_claude"
-        session_label = os.path.basename(cwd) if cwd else "Claude"
-        title = "✅ Claude 完成"
-        body = f"{session_label} 等待你的输入"
-        # OSC 777 notification format:
-        #   ESC ] 777 ; notify ; <title> ; <body> BEL
-        # Supported by Ghostty, iTerm2, kitty, xterm-derivatives, and others.
-        osc_sequence = f"\033]777;notify;{title};{body}\a"
-        with open(tty, "w") as tty_f:
-            tty_f.write(osc_sequence)
-    except (OSError, PermissionError, UnicodeError):
-        pass
 
 
 def main():
@@ -182,15 +148,9 @@ def main():
 
     elif event == "Stop":
         state["status"] = "waiting_for_input"
-        # Customization: emit native macOS notification via terminal OSC 777.
-        # The terminal (Ghostty) catches this and posts a notification that
-        # the user can click to return directly to this Ghostty tab.
-        emit_completion_notification(tty, cwd)
 
     elif event == "SubagentStop":
-        # SubagentStop fires when a subagent completes - usually means back
-        # to waiting. Do NOT emit completion notification here — it would
-        # fire multiple times during a single user-facing task.
+        # SubagentStop fires when a subagent completes - usually means back to waiting
         state["status"] = "waiting_for_input"
 
     elif event == "SessionStart":
