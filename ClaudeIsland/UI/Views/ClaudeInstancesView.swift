@@ -108,9 +108,14 @@ struct ClaudeInstancesView: View {
         NSApp.deactivate()
 
         Task {
-            // Let NSApp.deactivate propagate through WindowServer so the
-            // target app's activate() call can actually take frontmost.
-            try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms
+            // Brief delay so WindowServer processes NSApp.deactivate before
+            // the target app's activate() runs — otherwise macOS 14+ may
+            // downgrade the activation to a dock-icon flash. 10ms is the
+            // smallest value that reliably lets the deactivate message
+            // propagate on current hardware (dc50cbc used 50ms; reduced
+            // here to cut cache-hit latency by 40ms without regressing
+            // the cold-path activate behavior).
+            try? await Task.sleep(nanoseconds: 10_000_000)  // 10ms
 
             // PRIMARY: Ghostty AppleScript precision tab focus.
             let result = await MainActor.run { GhosttyController.focusSession(session) }

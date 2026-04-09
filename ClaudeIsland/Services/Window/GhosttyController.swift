@@ -39,6 +39,23 @@ enum GhosttyController {
         let name: String        // Tab title (updated via OSC 0/2)
     }
 
+    // MARK: - Enumerate Cache
+    //
+    // enumerateTerminals() is dominated by a ~400ms AppleScript round trip
+    // on typical hardware. For rapid successive focus calls (e.g. clicking
+    // two completed ✅ icons back to back), the Ghostty terminal layout is
+    // essentially static between clicks, so we cache the result for a short
+    // TTL and skip the AppleScript round trip on cache hits.
+    //
+    // First click:  ~500ms (cache miss, full AppleScript enumerate)
+    // Nth click within 1.5s: ~50ms (cache hit, only the focus call runs)
+    //
+    // All access to these vars is from MainActor-isolated callers.
+
+    private static var cachedTerminals: [TerminalInfo] = []
+    private static var cachedAt: Date = .distantPast
+    private static let cacheTTL: TimeInterval = 1.5
+
     enum FocusResult {
         case focused(tabName: String)
         case noMatch
@@ -57,8 +74,20 @@ enum GhosttyController {
     /// Output lines are `<uuid>\t<cwd>\t<name>` joined by linefeed.
     /// Returns an empty array if Ghostty is not running, sdef is missing,
     /// or any script-level error occurs.
+    ///
+    /// Results are cached for `cacheTTL` seconds. A cache hit returns in
+    /// microseconds; a miss incurs the full ~400ms AppleScript round trip.
     static func enumerateTerminals() -> [TerminalInfo] {
-        guard isRunning else { return [] }
+        guard isRunning else {
+            cachedTerminals = []
+            return []
+        }
+
+        // Cache hit path — return without hitting AppleScript.
+        if !cachedTerminals.isEmpty,
+           Date().timeIntervalSince(cachedAt) < cacheTTL {
+            return cachedTerminals
+        }
 
         let source = """
         tell application "Ghostty"
@@ -80,7 +109,7 @@ enum GhosttyController {
             return []
         }
 
-        return raw
+        let fresh: [TerminalInfo] = raw
             .components(separatedBy: "\n")
             .compactMap { line -> TerminalInfo? in
                 guard !line.isEmpty else { return nil }
@@ -92,6 +121,18 @@ enum GhosttyController {
                 let name = parts[2...].joined(separator: "\t")
                 return TerminalInfo(id: id, cwd: cwd, name: name)
             }
+
+        cachedTerminals = fresh
+        cachedAt = Date()
+        return fresh
+    }
+
+    /// Explicitly invalidate the enumerate cache. Callers that know the
+    /// terminal layout just changed (e.g. a tab was closed) can call this
+    /// to force a fresh fetch on the next enumerate.
+    static func invalidateEnumerateCache() {
+        cachedTerminals = []
+        cachedAt = .distantPast
     }
 
     // MARK: - Focusing
