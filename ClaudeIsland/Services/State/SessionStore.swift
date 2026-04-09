@@ -40,6 +40,14 @@ actor SessionStore {
         sessionsSubject.eraseToAnyPublisher()
     }
 
+    /// Current snapshot of all sessions (thread-safe, synchronous read).
+    /// Backed by CurrentValueSubject — safe to read from any thread without
+    /// hopping onto the actor. Used by the global hotkey handler to pick
+    /// the most recently completed session without blocking the main thread.
+    nonisolated var currentSessions: [SessionState] {
+        sessionsSubject.value
+    }
+
     // MARK: - Initialization
 
     private init() {}

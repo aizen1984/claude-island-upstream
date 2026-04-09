@@ -8,6 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowManager: WindowManager?
     private var screenObserver: ScreenObserver?
     private var updateCheckTimer: Timer?
+    private var hotkeyManager: GlobalHotkeyManager?
 
     static var shared: AppDelegate?
     let updater: SPUUpdater
@@ -85,6 +86,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let updater = self?.updater, updater.canCheckForUpdates else { return }
             updater.checkForUpdates()
         }
+
+        // Register global Cmd+Shift+U → activate the most recently
+        // completed (waiting-for-input) Claude session in its owning
+        // terminal window/tab. See SessionFocusService for the picker
+        // and GhosttyController for the Ghostty sdef focus path.
+        hotkeyManager = GlobalHotkeyManager()
+        hotkeyManager?.registerActivateCompletedSession()
     }
 
     private func handleScreenChange() {
@@ -95,6 +103,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Mixpanel.mainInstance().flush()
         updateCheckTimer?.invalidate()
         screenObserver = nil
+        hotkeyManager?.unregisterAll()
+        hotkeyManager = nil
     }
 
     private func getOrCreateDistinctId() -> String {

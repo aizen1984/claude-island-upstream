@@ -100,47 +100,10 @@ struct ClaudeInstancesView: View {
     ///      or sdef lookup fails, activate the first running terminal
     ///      app by known bundle IDs. App-level only; can't pick a tab.
     ///
-    /// CRITICAL: `NSApp.deactivate()` releases Claude Island's frontmost
-    /// status WITHOUT hiding the notch window (unlike NSApp.hide(nil)).
-    /// Without this, `.activateIgnoringOtherApps` on the target terminal
-    /// is a no-op on macOS 14+ due to tightened activation semantics.
+    /// Delegates to `SessionFocusService.focus` so the click path and the
+    /// global Cmd+Shift+U hotkey share identical activation behavior.
     private func focusSession(_ session: SessionState) {
-        NSApp.deactivate()
-
-        Task {
-            // Brief delay so WindowServer processes NSApp.deactivate before
-            // the target app's activate() runs — otherwise macOS 14+ may
-            // downgrade the activation to a dock-icon flash. 10ms is the
-            // smallest value that reliably lets the deactivate message
-            // propagate on current hardware (dc50cbc used 50ms; reduced
-            // here to cut cache-hit latency by 40ms without regressing
-            // the cold-path activate behavior).
-            try? await Task.sleep(nanoseconds: 10_000_000)  // 10ms
-
-            // PRIMARY: Ghostty AppleScript precision tab focus.
-            let result = await MainActor.run { GhosttyController.focusSession(session) }
-            if case .focused = result {
-                return
-            }
-
-            // FALLBACK: app-level activation of any running terminal.
-            let knownTerminalBundleIds = [
-                "com.mitchellh.ghostty",
-                "com.googlecode.iterm2",
-                "com.apple.Terminal",
-                "net.kovidgoyal.kitty",
-                "com.github.wez.wezterm",
-                "io.alacritty"
-            ]
-            for bundleId in knownTerminalBundleIds {
-                if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
-                    let activated = await MainActor.run {
-                        app.activate(options: [.activateIgnoringOtherApps])
-                    }
-                    if activated { return }
-                }
-            }
-        }
+        Task { await SessionFocusService.focus(session) }
     }
 
     private func openChat(_ session: SessionState) {
