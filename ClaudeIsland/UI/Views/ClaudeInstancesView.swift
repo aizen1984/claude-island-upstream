@@ -7,50 +7,7 @@
 
 import AppKit
 import Combine
-import Darwin
 import SwiftUI
-
-// MARK: - Terminal Focus Helpers (customization)
-//
-// Used by focusSession() as a fallback path when the user is NOT on
-// tmux + yabai. Walks the process tree from a Claude Code PID up to
-// find the ancestor GUI terminal app (Ghostty, iTerm2, Terminal.app,
-// kitty, WezTerm, etc.) and returns its NSRunningApplication so the
-// caller can activate it.
-//
-// Precision limit: brings the terminal app to frontmost but CANNOT
-// select a specific tab/window without extra APIs (yabai, tmux, or
-// Accessibility). Good enough for single-window Ghostty workflows.
-
-/// Get the parent PID of a given PID using libproc (fast, no subprocess).
-private func getParentPid(of pid: pid_t) -> pid_t? {
-    var pbsd = proc_bsdinfo()
-    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-    let result = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &pbsd, size)
-    guard result == size else { return nil }
-    return pid_t(pbsd.pbi_ppid)
-}
-
-/// Walk up the process tree from `startPid` looking for an ancestor that
-/// is a GUI app (has a bundle identifier in LaunchServices). Returns the
-/// first matching `NSRunningApplication`, or nil if none found within
-/// `maxDepth` ancestors.
-private func findAncestorGUIApp(startPid: pid_t, maxDepth: Int = 10) -> NSRunningApplication? {
-    var currentPid = startPid
-    for _ in 0..<maxDepth {
-        guard let ppid = getParentPid(of: currentPid), ppid > 1 else {
-            return nil
-        }
-        // A process has a bundleIdentifier if it was launched via LaunchServices
-        // (i.e., it's a .app bundle). CLI shells like /bin/zsh have no bundleId.
-        if let app = NSRunningApplication(processIdentifier: ppid),
-           app.bundleIdentifier != nil {
-            return app
-        }
-        currentPid = ppid
-    }
-    return nil
-}
 
 struct ClaudeInstancesView: View {
     @ObservedObject var sessionMonitor: ClaudeSessionMonitor
@@ -131,30 +88,51 @@ struct ClaudeInstancesView: View {
 
     // MARK: - Actions
 
+    /// Focus the terminal tab that owns this Claude session.
+    ///
+    /// Strategy:
+    ///   1. PRIMARY — Ghostty precision path via AppleScript (Ghostty.sdef).
+    ///      Enumerates all Ghostty terminals, scores them against this
+    ///      session's cwd + title, and runs `focus terminal id "UUID"`.
+    ///      Ghostty's `focus` command brings the window to front AND
+    ///      selects the target tab in a single operation.
+    ///   2. FALLBACK — if Ghostty isn't running (user is on iTerm2, etc.)
+    ///      or sdef lookup fails, activate the first running terminal
+    ///      app by known bundle IDs. App-level only; can't pick a tab.
+    ///
+    /// CRITICAL: `NSApp.deactivate()` releases Claude Island's frontmost
+    /// status WITHOUT hiding the notch window (unlike NSApp.hide(nil)).
+    /// Without this, `.activateIgnoringOtherApps` on the target terminal
+    /// is a no-op on macOS 14+ due to tightened activation semantics.
     private func focusSession(_ session: SessionState) {
+        NSApp.deactivate()
+
         Task {
-            // Path A (original): tmux session with yabai available — precise window focus.
-            if session.isInTmux {
-                var focused = false
-                if let pid = session.pid {
-                    focused = await YabaiController.shared.focusWindow(forClaudePid: pid)
-                } else {
-                    focused = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd)
-                }
-                if focused { return }
+            // Let NSApp.deactivate propagate through WindowServer so the
+            // target app's activate() call can actually take frontmost.
+            try? await Task.sleep(nanoseconds: 50_000_000)  // 50ms
+
+            // PRIMARY: Ghostty AppleScript precision tab focus.
+            let result = await MainActor.run { GhosttyController.focusSession(session) }
+            if case .focused = result {
+                return
             }
 
-            // Path B (customization fallback): walk up the process tree from the
-            // Claude Code PID to find the ancestor GUI terminal app (Ghostty /
-            // iTerm2 / Terminal.app / etc.) and activate it via NSRunningApplication.
-            // This brings the terminal to frontmost without requiring yabai, tmux,
-            // or Accessibility permission. Tab-level precision is not possible
-            // with this fallback — the user's currently-focused tab stays focused.
-            // For single-window Ghostty workflows this is effectively perfect.
-            guard let claudePid = session.pid else { return }
-            if let terminalApp = findAncestorGUIApp(startPid: pid_t(claudePid)) {
-                await MainActor.run {
-                    terminalApp.activate()
+            // FALLBACK: app-level activation of any running terminal.
+            let knownTerminalBundleIds = [
+                "com.mitchellh.ghostty",
+                "com.googlecode.iterm2",
+                "com.apple.Terminal",
+                "net.kovidgoyal.kitty",
+                "com.github.wez.wezterm",
+                "io.alacritty"
+            ]
+            for bundleId in knownTerminalBundleIds {
+                if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
+                    let activated = await MainActor.run {
+                        app.activate(options: [.activateIgnoringOtherApps])
+                    }
+                    if activated { return }
                 }
             }
         }
@@ -342,6 +320,16 @@ struct InstanceRow: View {
         .onTapGesture(count: 2) {
             onChat()
         }
+        .onTapGesture(count: 1) {
+            // Customization: single-tap on row fallback — if this session
+            // is waiting for input, treat the click as "focus terminal".
+            // This is belt-and-suspenders with the ✅ icon's own onTap:
+            // if the user misses the 24x24 icon hit area, the whole row
+            // still catches the click.
+            if session.phase == .waitingForInput {
+                onFocus()
+            }
+        }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isWaitingForApproval)
         .background(
             RoundedRectangle(cornerRadius: 12)
@@ -365,21 +353,19 @@ struct InstanceRow: View {
             HeaderProgressBar(tint: TerminalColors.amber)
                 .frame(width: 12, height: 3)
         case .waitingForInput:
-            // Customization: clickable completion checkmark. Clicking
-            // this triggers focusSession() which walks up the process
-            // tree to find the terminal app and activates it, so the
-            // user can jump back to the Ghostty (or any terminal) tab
-            // where the completed session lives.
-            Button {
-                onFocus()
-            } label: {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(TerminalColors.green)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("点击返回终端")
+            // Customization: clickable completion checkmark. Uses plain
+            // .onTapGesture (simpler than Button wrapping). Combined with
+            // row-level single-tap handler below (see body) as a fallback
+            // so clicking anywhere on a waiting row triggers focus.
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(TerminalColors.green)
+                .frame(width: 24, height: 24)  // Larger hit area
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onFocus()
+                }
+                .help("点击返回终端")
         case .idle, .ended:
             Circle()
                 .fill(Color.white.opacity(0.2))

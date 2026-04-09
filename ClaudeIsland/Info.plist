@@ -17,6 +17,13 @@
     <key>NSHumanReadableCopyright</key>
     <string>Copyright 2025. All rights reserved.</string>
 
+    <!-- Required so Claude Island can use AppleScript (Ghostty.sdef) to
+         precisely focus the terminal tab owning a clicked session.
+         Without this key, macOS silently denies Apple Events with
+         errAEEventNotPermitted (-1743) and never shows the consent prompt. -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Claude Island uses Apple Events to jump to the correct terminal tab when you click a completed session.</string>
+
     <!-- Sparkle Update Configuration -->
     <key>SUFeedURL</key>
     <string>https://claudeisland.com/appcast.xml</string>
