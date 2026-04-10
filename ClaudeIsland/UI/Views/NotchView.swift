@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Combine
 import CoreGraphics
 import SwiftUI
 
@@ -24,6 +25,9 @@ struct NotchView: View {
     @State private var previousWaitingForInputIds: Set<String> = []
     @State private var isVisible: Bool = false
     @State private var isHovering: Bool = false
+    @State private var statusPhrase: String = ""
+    @State private var dotCount: Int = 0
+    @State private var wasProcessing: Bool = false
 
     @Namespace private var activityNamespace
 
@@ -51,6 +55,10 @@ struct NotchView: View {
         !attentionSessions.isEmpty
     }
 
+    private var hasAnySessions: Bool {
+        !sessionMonitor.instances.isEmpty
+    }
+
     // MARK: - Sizing
 
     private var closedNotchSize: CGSize {
@@ -67,23 +75,33 @@ struct NotchView: View {
     /// `checkmarkSpacing` between; the block also has its own side padding.
     /// When there are no attention sessions we fall back to a fixed-width
     /// slot for the processing progress bar (if processing).
+    /// Measured width for the current status phrase + "..." (max dots).
+    private var statusTextSlotWidth: CGFloat {
+        guard hasAnySessions, !statusPhrase.isEmpty else { return 0 }
+        let fullText = statusPhrase + "..."
+        let font = NSFont.systemFont(ofSize: 9, weight: .semibold)
+        let size = (fullText as NSString).size(withAttributes: [.font: font])
+        return ceil(size.width)
+    }
+
     private var expansionWidth: CGFloat {
-        let leftCrabSlot: CGFloat = max(0, closedNotchSize.height - 12) + 10
+        let leftSlot = statusTextSlotWidth + 12 // +12 for leading padding
+        guard leftSlot > 12 else { return 0 }
 
         if hasAttention {
             let count = CGFloat(attentionSessions.count)
             let checkmarksWidth = count * Self.checkmarkIconSize
                 + max(0, count - 1) * Self.checkmarkSpacing
                 + Self.checkmarkBlockPadding
-            return leftCrabSlot + checkmarksWidth
+            return leftSlot + checkmarksWidth
         }
 
-        // Processing (no completions): fixed-width slot for the progress bar.
         if isProcessing {
-            return 2 * max(0, closedNotchSize.height - 12) + 20
+            let rightSlot = max(0, closedNotchSize.height - 12) + 10
+            return leftSlot + rightSlot
         }
 
-        return 0
+        return leftSlot
     }
 
     /// Layout constants for the multi-checkmark indicator.
@@ -203,19 +221,39 @@ struct NotchView: View {
         .onChange(of: sessionMonitor.instances) { _, instances in
             handleProcessingChange()
             handleWaitingForInputChange(instances)
+            refreshStatusPhrase()
+        }
+        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+            dotCount = (dotCount + 1) % 4
+        }
+    }
+
+    private func refreshStatusPhrase() {
+        let nowProcessing = isAnyProcessing
+        let hour = Calendar.current.component(.hour, from: Date())
+        let count = sessionMonitor.instances.count
+
+        if nowProcessing != wasProcessing {
+            wasProcessing = nowProcessing
+            statusPhrase = nowProcessing
+                ? StatusPhrases.smartWorking(hour: hour, sessionCount: count)
+                : StatusPhrases.smartIdle(hour: hour)
+        } else if statusPhrase.isEmpty && hasAnySessions {
+            statusPhrase = nowProcessing
+                ? StatusPhrases.smartWorking(hour: hour, sessionCount: count)
+                : StatusPhrases.smartIdle(hour: hour)
         }
     }
 
     // MARK: - Notch Layout
 
     private var isProcessing: Bool {
-        activityCoordinator.expandingActivity.show && activityCoordinator.expandingActivity.type == .claude
+        isAnyProcessing
     }
 
-    /// Whether to show the expanded closed state (processing or any
-    /// sessions needing attention — the latter renders as N checkmarks).
+    /// Whether to show the expanded closed state (any sessions exist).
     private var showClosedActivity: Bool {
-        isProcessing || hasAttention
+        isProcessing || hasAttention || hasAnySessions
     }
 
     @ViewBuilder
@@ -246,14 +284,21 @@ struct NotchView: View {
     @ViewBuilder
     private var headerRow: some View {
         HStack(spacing: 0) {
-            // Left side - crab only. The permission indicator was removed in
-            // the "no self-enlarge" refactor — both completion and ask events
-            // now render as checkmarks on the right.
-            if showClosedActivity {
-                ClaudeCrabIcon(size: 14, animateLegs: isAnyProcessing)
-                    .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showClosedActivity)
-                    .frame(width: viewModel.status == .opened ? nil : sideWidth)
-                    .padding(.leading, viewModel.status == .opened ? 8 : 0)
+            // Left side - animated status text.
+            // ZStack with hidden max-width text locks the width so dot animation
+            // doesn't cause jitter, and .fixedSize() prevents truncation.
+            if showClosedActivity && viewModel.status != .opened {
+                ZStack(alignment: .leading) {
+                    Text(statusPhrase + "...")
+                        .font(.system(size: 9, weight: .semibold))
+                        .opacity(0)
+                    Text(statusPhrase + String(repeating: ".", count: dotCount))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(Color(red: 0.85, green: 0.47, blue: 0.34))
+                }
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.leading, 8)
             }
 
             // Center content
@@ -273,11 +318,8 @@ struct NotchView: View {
                     .frame(width: closedNotchSize.width - cornerRadiusInsets.closed.top)
             }
 
-            // Right side - N checkmarks, one per session needing attention.
-            // Checkmark has priority over the processing progress bar so a
-            // "done" (or "ask") signal is visible even while other concurrent
-            // sessions are still running tool calls.
-            if showClosedActivity {
+            // Right side - only in closed state.
+            if showClosedActivity && viewModel.status != .opened {
                 if hasAttention {
                     HStack(spacing: Self.checkmarkSpacing) {
                         ForEach(attentionSessions, id: \.stableId) { _ in
@@ -312,11 +354,14 @@ struct NotchView: View {
     @ViewBuilder
     private var openedHeaderContent: some View {
         HStack(spacing: 12) {
-            // Show static crab only if not showing activity in headerRow
-            // (headerRow handles crab + indicator when showClosedActivity is true)
-            if !showClosedActivity {
+            if hasAnySessions, !statusPhrase.isEmpty {
+                Text(statusPhrase + String(repeating: ".", count: dotCount))
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(Color(red: 0.85, green: 0.47, blue: 0.34))
+                    .lineLimit(1)
+                    .padding(.leading, 8)
+            } else {
                 ClaudeCrabIcon(size: 14)
-                    .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: !showClosedActivity)
                     .padding(.leading, 8)
             }
 
@@ -334,7 +379,11 @@ struct NotchView: View {
                 ZStack(alignment: .topTrailing) {
                     // Customization: looping progress bar as the menu button's
                     // visual. Click behavior preserved by the outer Button.
-                    HeaderProgressBar()
+                    HeaderProgressBar(
+                        tint: isProcessing
+                            ? Color(red: 0.85, green: 0.47, blue: 0.34)
+                            : .white
+                    )
                         .frame(width: 16, height: 3)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())

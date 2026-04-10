@@ -12,28 +12,40 @@ import os.log
 private let logger = Logger(subsystem: "com.claudeisland", category: "Window")
 
 class WindowManager {
-    private(set) var windowController: NotchWindowController?
+    private(set) var windowControllers: [NotchWindowController] = []
 
-    /// Set up or recreate the notch window
+    /// Convenience: the first (or only) window controller
+    var windowController: NotchWindowController? {
+        windowControllers.first
+    }
+
+    /// Set up or recreate notch windows for all target screens
+    @discardableResult
     func setupNotchWindow() -> NotchWindowController? {
-        // Use ScreenSelector for screen selection
         let screenSelector = ScreenSelector.shared
         screenSelector.refreshScreens()
 
-        guard let screen = screenSelector.selectedScreen else {
-            logger.warning("No screen found")
+        let screens = screenSelector.targetScreens
+        guard !screens.isEmpty else {
+            logger.warning("No screens found")
             return nil
         }
 
-        if let existingController = windowController {
-            existingController.window?.orderOut(nil)
-            existingController.window?.close()
-            windowController = nil
+        // Close all existing windows
+        for controller in windowControllers {
+            controller.window?.orderOut(nil)
+            controller.window?.close()
+        }
+        windowControllers.removeAll()
+
+        // Create one controller per target screen
+        for screen in screens {
+            let controller = NotchWindowController(screen: screen)
+            controller.showWindow(nil)
+            windowControllers.append(controller)
+            logger.info("Created island on screen: \(screen.localizedName)")
         }
 
-        windowController = NotchWindowController(screen: screen)
-        windowController?.showWindow(nil)
-
-        return windowController
+        return windowControllers.first
     }
 }

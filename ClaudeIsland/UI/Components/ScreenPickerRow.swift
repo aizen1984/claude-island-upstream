@@ -61,6 +61,17 @@ struct ScreenPickerRow: View {
             // Expanded screen list
             if isExpanded {
                 VStack(spacing: 2) {
+                    // All Screens option
+                    ScreenOptionRow(
+                        label: "All Screens",
+                        sublabel: "\(screenSelector.availableScreens.count) displays",
+                        isSelected: screenSelector.selectionMode == .allScreens
+                    ) {
+                        screenSelector.selectAllScreens()
+                        triggerWindowRecreation()
+                        collapseAfterDelay()
+                    }
+
                     // Automatic option
                     ScreenOptionRow(
                         label: "Automatic",
@@ -94,6 +105,8 @@ struct ScreenPickerRow: View {
 
     private var currentSelectionLabel: String {
         switch screenSelector.selectionMode {
+        case .allScreens:
+            return "All"
         case .automatic:
             return "Auto"
         case .specificScreen:

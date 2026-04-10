@@ -176,25 +176,26 @@ struct ReadyForInputIndicatorIcon: View {
 
 struct HeaderProgressBar: View {
     var tint: Color = .white
-    @State private var phase: CGFloat = 0
 
     var body: some View {
-        GeometryReader { geo in
-            let trackW = geo.size.width
-            let highlightW = trackW * 0.40
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(tint.opacity(0.22))
-                Capsule()
-                    .fill(tint.opacity(0.90))
-                    .frame(width: highlightW)
-                    .offset(x: phase * (trackW + highlightW) - highlightW)
-            }
-            .clipShape(Capsule())
-        }
-        .onAppear {
-            withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
-                phase = 1
+        // TimelineView(.animation) drives from the system display link,
+        // which works reliably in secondary NSPanel windows where
+        // withAnimation / .animation() may not fire.
+        TimelineView(.animation) { timeline in
+            GeometryReader { geo in
+                let trackW = geo.size.width
+                let highlightW = trackW * 0.40
+                let elapsed = timeline.date.timeIntervalSinceReferenceDate
+                let phase = CGFloat(elapsed.truncatingRemainder(dividingBy: 1.4) / 1.4)
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(tint.opacity(0.22))
+                    Capsule()
+                        .fill(tint.opacity(0.90))
+                        .frame(width: highlightW)
+                        .offset(x: phase * (trackW + highlightW) - highlightW)
+                }
+                .clipShape(Capsule())
             }
         }
     }

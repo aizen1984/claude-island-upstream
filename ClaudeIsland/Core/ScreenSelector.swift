@@ -13,6 +13,7 @@ import Foundation
 enum ScreenSelectionMode: String, Codable {
     case automatic       // Prefer built-in display, fall back to main
     case specificScreen  // User selected a specific screen
+    case allScreens      // Show island on every connected screen
 }
 
 /// Persistent identifier for a screen
@@ -51,7 +52,7 @@ class ScreenSelector: ObservableObject {
     // MARK: - Published State
     @Published private(set) var availableScreens: [NSScreen] = []
     @Published private(set) var selectedScreen: NSScreen?
-    @Published var selectionMode: ScreenSelectionMode = .automatic
+    @Published var selectionMode: ScreenSelectionMode = .allScreens
     @Published var isPickerExpanded: Bool = false
 
     // MARK: - UserDefaults Keys
@@ -90,6 +91,27 @@ class ScreenSelector: ObservableObject {
         savePreferences()
     }
 
+    /// All screens the island should appear on (one or more depending on mode)
+    var targetScreens: [NSScreen] {
+        switch selectionMode {
+        case .allScreens:
+            return availableScreens
+        case .automatic, .specificScreen:
+            if let screen = selectedScreen {
+                return [screen]
+            }
+            return []
+        }
+    }
+
+    /// Select all screens mode
+    func selectAllScreens() {
+        selectionMode = .allScreens
+        savedIdentifier = nil
+        selectedScreen = resolveSelectedScreen()
+        savePreferences()
+    }
+
     /// Check if a screen is currently selected
     func isSelected(_ screen: NSScreen) -> Bool {
         guard let selected = selectedScreen else { return false }
@@ -99,8 +121,8 @@ class ScreenSelector: ObservableObject {
     /// Extra height needed when picker is expanded
     var expandedPickerHeight: CGFloat {
         guard isPickerExpanded else { return 0 }
-        // +1 for "Automatic" option
-        return CGFloat(availableScreens.count + 1) * 40
+        // +2 for "All Screens" and "Automatic" options
+        return CGFloat(availableScreens.count + 2) * 40
     }
 
     // MARK: - Private Methods
@@ -122,13 +144,28 @@ class ScreenSelector: ObservableObject {
             }
             // Saved screen not found - fall back to automatic
             return NSScreen.builtin ?? NSScreen.main
+
+        case .allScreens:
+            // selectedScreen is used as a fallback reference; targetScreens is the real API
+            return NSScreen.builtin ?? NSScreen.main
         }
     }
+
+    private static let allScreensMigrationKey = "didMigrateToAllScreensDefault"
 
     private func loadPreferences() {
         if let modeString = UserDefaults.standard.string(forKey: modeKey),
            let mode = ScreenSelectionMode(rawValue: modeString) {
             selectionMode = mode
+        }
+
+        // One-time migration: switch old "automatic" default to "allScreens"
+        if !UserDefaults.standard.bool(forKey: Self.allScreensMigrationKey) {
+            UserDefaults.standard.set(true, forKey: Self.allScreensMigrationKey)
+            if selectionMode == .automatic {
+                selectionMode = .allScreens
+                UserDefaults.standard.set(selectionMode.rawValue, forKey: modeKey)
+            }
         }
 
         if let data = UserDefaults.standard.data(forKey: screenIdentifierKey),
