@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Island - Design Proposals</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --card: #111;
+    --card-alt: #161616;
+    --border: #222;
+    --text: #e0e0e0;
+    --dim: rgba(255,255,255,0.4);
+    --dim2: rgba(255,255,255,0.25);
+    --dim3: rgba(255,255,255,0.08);
+    --green: #6AC04F;
+    --amber: #FFB200;
+    --orange: #d97857;
+    --blue: #6699FF;
+    --red: #FF4D4D;
+    --cyan: #00CCCC;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 40px 20px 80px;
+  }
+
+  .container { max-width: 900px; margin: 0 auto; }
+
+  h1 {
+    font-size: 28px; font-weight: 800;
+    background: linear-gradient(135deg, var(--orange), #f0a070);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .subtitle { color: var(--dim); font-size: 14px; margin-bottom: 48px; }
+
+  /* Proposal card */
+  .proposal {
+    margin-bottom: 56px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--card);
+  }
+  .proposal-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .proposal-header .tag {
+    font-size: 11px; font-weight: 700;
+    padding: 3px 8px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .tag-p0 { background: var(--red); color: #fff; }
+  .tag-p1 { background: var(--amber); color: #000; }
+  .tag-p2 { background: var(--blue); color: #fff; }
+  .tag-p3 { background: var(--dim3); color: var(--dim); }
+  .proposal-header h2 { font-size: 18px; font-weight: 700; }
+  .proposal-desc {
+    padding: 0 24px 16px;
+    color: var(--dim); font-size: 13px;
+  }
+
+  /* Before / After */
+  .comparison {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  }
+  .comparison .side {
+    padding: 24px;
+    position: relative;
+  }
+  .comparison .side:first-child { border-right: 1px solid var(--border); }
+  .side-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 16px;
+  }
+  .side-label.before { color: var(--dim); }
+  .side-label.after { color: var(--green); }
+
+  /* Notch mockup */
+  .notch-mock {
+    background: #000;
+    border-radius: 0 0 18px 18px;
+    margin: 0 auto;
+    padding: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .notch-closed {
+    height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 12px; gap: 8px;
+  }
+  .notch-closed .status-text {
+    font-size: 10px; font-weight: 900; color: var(--orange);
+    white-space: nowrap;
+  }
+  .notch-closed .spacer {
+    width: 60px; height: 100%; background: #000;
+  }
+  .notch-closed .dots { display: flex; gap: 4px; align-items: center; }
+  .dot-check { color: var(--green); font-size: 11px; font-weight: 600; }
+  .dot-run { width: 6px; height: 6px; border-radius: 50%; background: var(--orange); }
+  .dot-idle { width: 6px; height: 6px; border-radius: 50%; border: 0.8px solid rgba(255,255,255,0.5); }
+
+  /* Instance row mockup */
+  .instance-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px 10px 8px;
+    border-radius: 12px;
+    background: transparent;
+    transition: background 0.15s;
+  }
+  .instance-row:hover { background: rgba(255,255,255,0.06); }
+  .instance-row .indicator {
+    width: 14px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .progress-bar {
+    width: 12px; height: 3px; border-radius: 2px;
+    background: rgba(217,120,87,0.25);
+    position: relative; overflow: hidden;
+  }
+  .progress-bar::after {
+    content: ''; position: absolute; left: -40%;
+    width: 40%; height: 100%; border-radius: 2px;
+    background: var(--orange);
+    animation: slide 1.4s linear infinite;
+  }
+  @keyframes slide {
+    to { left: 100%; }
+  }
+  .progress-bar-amber { background: rgba(255,178,0,0.25); }
+  .progress-bar-amber::after { background: var(--amber); }
+
+  .instance-row .info { flex: 1; min-width: 0; }
+  .instance-row .title {
+    font-size: 13px; font-weight: 500; color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .instance-row .detail {
+    font-size: 11px; color: var(--dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .instance-row .detail .tool-name {
+    font-family: 'SF Mono', monospace; font-weight: 500;
+    color: rgba(255,255,255,0.5);
+  }
+  .instance-row .detail .tool-name.amber { color: rgba(255,178,0,0.9); }
+
+  .instance-row .actions {
+    display: flex; gap: 8px; align-items: center; flex-shrink: 0;
+  }
+  .icon-btn {
+    width: 24px; height: 24px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--dim); cursor: pointer;
+    transition: all 0.15s;
+    background: transparent; border: none;
+  }
+  .icon-btn:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.1); }
+
+  .time-tag {
+    font-size: 10px; color: var(--dim2); font-weight: 500;
+    white-space: nowrap;
+  }
+  .time-tag.urgent { color: var(--amber); }
+
+  /* Checkmark indicator */
+  .check-indicator {
+    color: var(--green); font-size: 16px; font-weight: 700;
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+
+  /* Panel mockup */
+  .panel-mock {
+    background: #000;
+    border-radius: 19px;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    width: 100%;
+    max-width: 340px;
+    margin: 0 auto;
+  }
+  .panel-header {
+    height: 32px; display: flex; align-items: center;
+    padding: 0 12px; gap: 8px;
+  }
+  .panel-content { padding: 4px 12px 12px; }
+
+  /* Menu row mockup */
+  .menu-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 8px;
+    cursor: pointer; transition: background 0.15s;
+    font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.7);
+  }
+  .menu-row:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .menu-row .icon { width: 16px; text-align: center; font-size: 12px; }
+  .menu-row .value { margin-left: auto; font-size: 11px; color: var(--dim); }
+
+  /* Empty state mockup */
+  .empty-state {
+    padding: 24px 16px;
+    text-align: center;
+  }
+  .empty-state .title { font-size: 13px; font-weight: 500; color: var(--dim); }
+  .empty-state .hint { font-size: 11px; color: var(--dim2); margin-top: 4px; }
+  .empty-state .cta-btn {
+    margin-top: 16px;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: 8px;
+    background: var(--orange); color: #fff;
+    font-size: 12px; font-weight: 600;
+    border: none; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .empty-state .cta-btn:hover { opacity: 0.85; }
+  .empty-state .hooks-status {
+    margin-top: 12px; font-size: 11px; color: var(--dim2);
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .empty-state .hooks-status .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+  .empty-state .hooks-status .dot.on { background: var(--green); }
+  .empty-state .hooks-status .dot.off { background: var(--red); }
+
+  /* Chat message mockup */
+  .chat-mock { padding: 8px 0; }
+  .chat-msg {
+    padding: 8px 12px; margin-bottom: 4px; border-radius: 8px;
+  }
+  .chat-msg.user {
+    background: rgba(255,255,255,0.06);
+    font-size: 13px; color: #fff;
+  }
+  .chat-msg.user .label { font-size: 11px; font-weight: 600; color: var(--dim); margin-bottom: 2px; }
+  .chat-msg.assistant { font-size: 13px; color: rgba(255,255,255,0.85); padding: 8px 12px; }
+  .chat-msg.tool {
+    font-size: 12px; padding: 6px 12px;
+    font-family: 'SF Mono', monospace;
+    display: flex; align-items: center; gap: 8px;
+    cursor: pointer; transition: background 0.15s;
+    border-radius: 6px;
+  }
+  .chat-msg.tool:hover { background: rgba(255,255,255,0.04); }
+  .chat-msg.tool .tool-icon { color: var(--dim); font-size: 10px; transition: transform 0.2s; }
+  .chat-msg.tool .tool-icon.expanded { transform: rotate(90deg); }
+  .chat-msg.tool .tool-label { color: var(--cyan); font-weight: 500; }
+  .chat-msg.tool .tool-input { color: var(--dim); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-msg.tool .tool-status { font-size: 10px; }
+  .chat-msg.tool .tool-status.ok { color: var(--green); }
+
+  .tool-expanded {
+    margin-left: 20px; padding: 8px 12px;
+    font-size: 11px; font-family: 'SF Mono', monospace;
+    color: var(--dim); background: rgba(255,255,255,0.03);
+    border-radius: 6px; border-left: 2px solid var(--dim3);
+    margin-bottom: 4px;
+    max-height: 80px; overflow: hidden;
+  }
+
+  .thinking-block {
+    padding: 6px 12px; margin-bottom: 4px;
+    font-size: 12px; color: rgba(255,255,255,0.3);
+    font-style: italic;
+    cursor: pointer; border-radius: 6px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .thinking-block:hover { background: rgba(255,255,255,0.03); }
+  .thinking-block .toggle { font-size: 10px; color: var(--dim2); }
+
+  /* Peek card */
+  .peek-card {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 14px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+    max-width: 280px;
+    margin: 8px auto 0;
+  }
+  .peek-card .peek-title {
+    font-size: 12px; font-weight: 500; color: #fff;
+    margin-bottom: 4px;
+  }
+  .peek-card .peek-detail {
+    font-size: 11px; color: var(--dim);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .peek-card .peek-detail .tool-name { font-family: 'SF Mono', monospace; color: var(--orange); font-weight: 500; }
+  .peek-card .peek-actions {
+    display: flex; gap: 8px; margin-top: 8px;
+  }
+  .peek-card .peek-btn {
+    font-size: 11px; font-weight: 500; padding: 4px 10px;
+    border-radius: 6px; border: none; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .peek-card .peek-btn:hover { opacity: 0.8; }
+  .peek-card .peek-btn.primary { background: rgba(255,255,255,0.9); color: #000; }
+  .peek-card .peek-btn.secondary { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
+
+  /* Menu button comparison */
+  .menu-btn-mock {
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .menu-btn-mock:hover { background: rgba(255,255,255,0.1); }
+
+  /* Section divider */
+  .section-divider {
+    height: 1px; background: var(--border);
+    margin: 4px 0;
+  }
+
+  /* Background layer demo */
+  .layer-demo {
+    border-radius: 16px; overflow: hidden;
+    max-width: 340px; margin: 0 auto;
+  }
+  .layer-section {
+    padding: 12px;
+  }
+  .layer-section.alt { background: #0d0d0d; }
+  .layer-section.base { background: #000; }
+  .layer-section-label {
+    font-size: 9px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.8px; color: var(--dim2); margin-bottom: 8px;
+  }
+
+  /* Annotations */
+  .annotation {
+    position: relative;
+    margin-top: 12px; padding: 8px 12px;
+    background: rgba(102,153,255,0.08);
+    border-left: 2px solid var(--blue);
+    border-radius: 0 6px 6px 0;
+    font-size: 11px; color: rgba(102,153,255,0.8);
+  }
+
+  /* Hover hint mockup */
+  .hover-hint {
+    font-size: 10px; color: var(--dim2);
+    display: flex; align-items: center; gap: 4px;
+    margin-top: 2px;
+  }
+  .hover-hint .arrow { color: var(--orange); }
+
+  /* Action button sizes */
+  .action-primary {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: rgba(255,255,255,0.6);
+    background: rgba(255,255,255,0.06);
+    cursor: pointer; transition: all 0.15s; border: none;
+  }
+  .action-primary:hover { color: #fff; background: rgba(255,255,255,0.12); }
+
+  .swipe-hint {
+    font-size: 10px; color: var(--dim2);
+    text-align: center; padding: 4px 0;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+  }
+
+  /* Responsive */
+  @media (max-width: 700px) {
+    .comparison { grid-template-columns: 1fr; }
+    .comparison .side:first-child { border-right: none; border-bottom: 1px solid var(--border); }
+  }
+
+  /* Pulsing animation for breathing dot */
+  @keyframes breathe {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+  .dot-run { animation: breathe 1.5s ease-in-out infinite; }
+
+  /* Scale pulse for check */
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+  }
+
+  /* Tooltip */
+  .tooltip-wrap { position: relative; }
+  .tooltip-wrap .tooltip {
+    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%); white-space: nowrap;
+    font-size: 10px; color: #fff; background: #333;
+    padding: 3px 8px; border-radius: 4px;
+    opacity: 0; transition: opacity 0.15s; pointer-events: none;
+  }
+  .tooltip-wrap:hover .tooltip { opacity: 1; }
+
+  /* Full-width single column for some proposals */
+  .single-col {
+    padding: 24px;
+  }
+
+  .nav-toc {
+    position: fixed; right: 24px; top: 50%;
+    transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 100;
+  }
+  .nav-toc a {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--dim3); display: block;
+    transition: all 0.2s; text-decoration: none;
+  }
+  .nav-toc a:hover { background: var(--orange); transform: scale(1.4); }
+  @media (max-width: 900px) { .nav-toc { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Claude Island Design Proposals</h1>
+  <p class="subtitle">6 improvements across efficiency, discoverability, and visual polish. Click to toggle interactive states.</p>
+
+  <!-- ============================================ -->
+  <!-- PROPOSAL 1: Time Duration Display -->
+  <!-- ============================================ -->
+  <div class="proposal" id="p1">
+    <div class="proposal-header">
+      <span class="tag tag-p0">P0</span>
+      <h2>InstanceRow + Running Duration</h2>
+    </div>
+    <p class="proposal-desc">
+      Multi-session parallel work scenario: users need to triage "which session needs me most." Adding a time tag (running duration / waiting duration) provides the decision signal that's currently missing.
+    </p>
+    <div class="comparison">
+      <!-- Before -->
+      <div class="side">
+        <div class="side-label before">BEFORE</div>
+        <div style="background:#000; border-radius:12px; padding:4px 0;">
+          <div class="instance-row">
+            <div class="indicator"><div class="progress-bar"></div></div>
+            <div class="info">
+              <div class="title">Refactor auth middleware</div>
+              <div class="detail">
+                <span class="tool-name">Bash</span>
+                <span>npm run test</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="icon-btn">💬</button>
+              <button class="icon-btn">📦</button>
+            </div>
+          </div>
+          <div class="instance-row">
+            <div class="indicator"><div class="check-indicator">✓</div></div>
+            <div class="info">
+              <div class="title">Fix payment N+1 query</div>
+              <div class="detail">
+                <span>Ready for your input</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="icon-btn">💬</button>
+              <button class="icon-btn">👁</button>
+              <button class="icon-btn">📦</button>
+            </div>
+          </div>
+          <div class="instance-row">
+            <div class="indicator"><div class="progress-bar"></div></div>
+            <div class="info">
+              <div class="title">Add logging to ingest pipeline</div>
+              <div class="detail">
+                <span class="tool-name">Edit</span>
+                <span>src/ingest/handler.ts</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="icon-btn">💬</button>
+            </div>
+          </div>
+        </div>
+        <div class="annotation">No time context. Which session started first? How long has the check been waiting?</div>
+      </div>
+
+      <!-- After -->
+      <div class="side">
+        <div class="side-label after">AFTER</div>
+        <div style="background:#000; border-radius:12px; padding:4px 0;">
+          <div class="instance-row">
+            <div class="indicator"><div class="progress-bar"></div></div>
+            <div class="info">
+              <div class="title">Refactor auth middleware</div>
+              <div class="detail">
+                <span class="tool-name">Bash</span>
+                <span>npm run test</span>
+              </div>
+            </div>
+            <div class="actions">
+              <span class="time-tag">12m</span>
+              <button class="icon-btn">💬</button>
+            </div>
+          </div>
+          <div class="instance-row">
+            <div class="indicator"><div class="check-indicator">✓</div></div>
+            <div class="info">
+              <div class="title">Fix payment N+1 query</div>
+              <div class="detail">
+                <span>Ready for your input</span>
+              </div>
+            </div>
+            <div class="actions">
+              <span class="time-tag urgent">3m ago</span>
+              <button class="icon-btn">💬</button>
+              <button class="icon-btn">👁</button>
+            </div>
+          </div>
+          <div class="instance-row">
+            <div class="indicator"><div class="progress-bar"></div></div>
+            <div class="info">
+              <div class="title">Add logging to ingest pipeline</div>
+              <div class="detail">
+                <span class="tool-name">Edit</span>
+                <span>src/ingest/handler.ts</span>
+              </div>
+            </div>
+            <div class="actions">
+              <span class="time-tag">45s</span>
+              <button class="icon-btn">💬</button>
+            </div>
+          </div>
+        </div>
+        <div class="annotation">
+          <strong>Running sessions</strong>: show elapsed time (12m, 45s).<br>
+          <strong>Waiting sessions</strong>: show "N ago" in amber when idle > 1 min. Helps triage.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- PROPOSAL 2: Menu Button Discoverability -->
+  <!-- ============================================ -->
+  <div class="proposal" id="p2">
+    <div class="proposal-header">
+      <span class="tag tag-p1">P1</span>
+      <h2>Menu Button Discoverability</h2>
+    </div>
+    <p class="proposal-desc">
+      The header progress bar doubles as the menu toggle, but nothing visually communicates "I am a button." New users won't discover settings until told. Proposal: show a recognizable icon when idle, morph to progress bar only during processing.
+    </p>
+    <div class="comparison">
+      <div class="side">
+        <div class="side-label before">BEFORE (always progress bar)</div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap: 24px; padding: 20px 0;">
+          <!-- Idle state -->
+          <div>
+            <div style="font-size:10px; color:var(--dim2); margin-bottom:8px; text-align:center;">IDLE STATE</div>
+            <div style="background:#000; border-radius:12px; padding:8px 16px; display:flex; align-items:center; gap:12px;">
+              <span style="font-size:10px; font-weight:900; color:var(--orange);">搬砖中..</span>
+              <span style="flex:1"></span>
+              <div style="width:16px; height:3px; border-radius:2px; background:rgba(255,255,255,0.22); overflow:hidden; position:relative;">
+                <div style="position:absolute; width:40%; height:100%; border-radius:2px; background:rgba(255,255,255,0.9); animation: slide 1.4s linear infinite;"></div>
+              </div>
+            </div>
+          </div>
+          <!-- Processing state -->
+          <div>
+            <div style="font-size:10px; color:var(--dim2); margin-bottom:8px; text-align:center;">PROCESSING STATE</div>
+            <div style="background:#000; border-radius:12px; padding:8px 16px; display:flex; align-items:center; gap:12px;">
+              <span style="font-size:10px; font-weight:900; color:var(--orange);">搬砖中...</span>
+              <span style="flex:1"></span>
+              <div style="width:16px; height:3px; border-radius:2px; background:rgba(217,120,87,0.25); overflow:hidden; position:relative;">
+                <div style="position:absolute; width:40%; height:100%; border-radius:2px; background:var(--orange); animation: slide 1.4s linear infinite;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="annotation">Both states look the same. Users don't realize the bar is clickable.</div>
+      </div>
+      <div class="side">
+        <div class="side-label after">AFTER (icon when idle, bar when processing)</div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap: 24px; padding: 20px 0;">
+          <!-- Idle state -->
+          <div>
+            <div style="font-size:10px; color:var(--dim2); margin-bottom:8px; text-align:center;">IDLE STATE</div>
+            <div style="background:#000; border-radius:12px; padding:8px 16px; display:flex; align-items:center; gap:12px;">
+              <span style="font-size:10px; font-weight:900; color:var(--orange);">搬砖中..</span>
+              <span style="flex:1"></span>
+              <div class="tooltip-wrap">
+                <div style="font-size:13px; color:rgba(255,255,255,0.5); cursor:pointer; width:22px; height:22px; display:flex; align-items:center; justify-content:center; border-radius:6px; transition: all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'; this.style.color='rgba(255,255,255,0.8)'" onmouseout="this.style.background='transparent'; this.style.color='rgba(255,255,255,0.5)'">
+                  ⚙
+                </div>
+                <div class="tooltip">Settings</div>
+              </div>
+            </div>
+          </div>
+          <!-- Processing state -->
+          <div>
+            <div style="font-size:10px; color:var(--dim2); margin-bottom:8px; text-align:center;">PROCESSING STATE</div>
+            <div style="background:#000; border-radius:12px; padding:8px 16px; display:flex; align-items:center; gap:12px;">
+              <span style="font-size:10px; font-weight:900; color:var(--orange);">搬砖中...</span>
+              <span style="flex:1"></span>
+              <div style="width:16px; height:3px; border-radius:2px; background:rgba(217,120,87,0.25); overflow:hidden; position:relative;">
+                <div style="position:absolute; width:40%; height:100%; border-radius:2px; background:var(--orange); animation: slide 1.4s linear infinite;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="annotation">
+          <strong>Idle</strong>: SF Symbol <code>gearshape</code> (universally recognized as "settings").<br>
+          <strong>Processing</strong>: morphs to progress bar (current behavior preserved).<br>
+          Hover tooltip "Settings" for extra clarity.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- PROPOSAL 3: Empty State & Onboarding -->
+  <!-- ============================================ -->
+  <div class="proposal" id="p3">
+    <div class="proposal-header">
+      <span class="tag tag-p1">P1</span>
+      <h2>Empty State & First-Run Experience</h2>
+    </div>
+    <p class="proposal-desc">
+      Current empty state is a dead end — plain text with no actionable guidance. Users who haven't installed hooks (the prerequisite for the app to work) get zero signal. Proposal: contextual empty state with hooks status and a CTA.
+    </p>
+    <div class="comparison">
+      <div class="side">
+        <div class="side-label before">BEFORE</div>
+        <div class="panel-mock">
+          <div class="panel-header">
+            <span style="flex:1"></span>
+            <div style="width:16px; height:3px; border-radius:2px; background:rgba(255,255,255,0.22); overflow:hidden; position:relative;">
+              <div style="position:absolute; width:40%; height:100%; border-radius:2px; background:rgba(255,255,255,0.9); animation: slide 1.4s linear infinite;"></div>
+            </div>
+          </div>
+          <div class="empty-state" style="padding: 40px 16px;">
+            <div class="title">No sessions</div>
+            <div class="hint">Run claude in terminal</div>
+          </div>
+        </div>
+        <div class="annotation">Dead end. No hooks status, no action, no guidance for new users.</div>
+      </div>
+      <div class="side">
+        <div class="side-label after">AFTER</div>
+        <div class="panel-mock">
+          <div class="panel-header">
+            <span style="flex:1"></span>
+            <div style="font-size:13px; color:rgba(255,255,255,0.5); width:22px; height:22px; display:flex; align-items:center; justify-content:center;">⚙</div>
+          </div>
+          <div class="empty-state">
+            <div style="font-size:24px; margin-bottom:8px; opacity:0.3;">🏝️</div>
+            <div class="title">No active sessions</div>
+            <div class="hint">Start <code style="background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:3px; font-size:11px;">claude</code> in any terminal to see it here</div>
+            <div class="hooks-status">
+              <span class="dot on"></span>
+              Hooks installed
+            </div>
+          </div>
+        </div>
+        <br>
+        <div style="font-size:10px; color:var(--dim2); text-align:center; margin-bottom:8px;">When hooks are NOT installed:</div>
+        <div class="panel-mock">
+          <div class="panel-header">
+            <span style="flex:1"></span>
+            <div style="font-size:13px; color:rgba(255,255,255,0.5); width:22px; height:22px; display:flex; align-items:center; justify-content:center;">⚙</div>
+          </div>
+          <div class="empty-state">
+            <div style="font-size:24px; margin-bottom:8px; opacity:0.3;">🏝️</div>
+            <div class="title" style="color:var(--amber);">Hooks not installed</div>
+            <div class="hint">Claude Island needs hooks to communicate with Claude Code</div>
+            <button class="cta-btn" onclick="this.textContent='✓ Installed'; this.style.background='var(--green)'">
+              Install Hooks
+            </button>
+            <div class="hooks-status">
+              <span class="dot off"></span>
+              <span style="color:var(--dim2)">~/.claude/hooks not configured</span>
+            </div>
+          </div>
+        </div>
+        <div class="annotation">
+          Two contextual states: hooks installed (gentle guidance) vs. not installed (prominent CTA). User doesn't have to discover the toggle buried in Settings.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- PROPOSAL 4: ChatView Tool Call Folding -->
+  <!-- ============================================ -->
+  <div class="proposal" id="p4">
+    <div class="proposal-header">
+      <span class="tag tag-p2">P2</span>
+      <h2>ChatView: Collapsible Tool Calls & Thinking</h2>
+    </div>
+    <p class="proposal-desc">
+      In the ~340px wide chat panel, tool calls + thinking blocks + results compete for space. When a session runs 20+ tools, the conversation becomes hard to follow. Proposal: fold tool calls into a single-line summary, expand on click.
+    </p>
+    <div class="comparison">
+      <div class="side">
+        <div class="side-label before">BEFORE (all expanded)</div>
+        <div style="background:#000; border-radius:12px; padding:8px;">
+          <div class="chat-mock">
+            <div class="chat-msg user">
+              <div class="label">You</div>
+              Fix the N+1 query in PaymentService
+            </div>
+            <div class="chat-msg assistant" style="font-size:12px; color:var(--dim);">
+              I'll look at the PaymentService to find the N+1 query issue...
+            </div>
+            <div style="padding:6px 12px; font-size:12px; font-family:'SF Mono',monospace;">
+              <div style="color:var(--cyan); margin-bottom:2px;">Grep</div>
+              <div style="color:var(--dim); font-size:11px; padding:4px 8px; background:rgba(255,255,255,0.03); border-radius:4px; margin-bottom:4px;">pattern: "queryByOrderNo", path: "src/"</div>
+              <div style="color:var(--dim2); font-size:11px; padding:4px 8px; background:rgba(255,255,255,0.03); border-radius:4px;">Found 3 matches in 2 files...</div>
+            </div>
+            <div style="padding:6px 12px; font-size:12px; font-family:'SF Mono',monospace;">
+              <div style="color:var(--cyan); margin-bottom:2px;">Read</div>
+              <div style="color:var(--dim); font-size:11px; padding:4px 8px; background:rgba(255,255,255,0.03); border-radius:4px; margin-bottom:4px;">file_path: "src/services/PaymentService.java", offset: 130, limit: 50</div>
+              <div style="color:var(--dim2); font-size:11px; padding:4px 8px; background:rgba(255,255,255,0.03); border-radius:4px;">public List&lt;Payment&gt; queryByOrderNo...</div>
+            </div>
+            <div style="padding:6px 12px; font-size:12px; font-family:'SF Mono',monospace;">
+              <div style="color:var(--cyan); margin-bottom:2px;">Read</div>
+              <div style="color:var(--dim); font-size:11px; padding:4px 8px; background:rgba(255,255,255,0.03); border-radius:4px; margin-bottom:4px;">file_path: "src/dao/PaymentDAO.java"</div>
+              <div style="color:var(--dim2); font-size:11px; padding:4px 8px; background:rgba(255,255,255,0.03); border-radius:4px;">@Select("SELECT * FROM payment WHERE...</div>
+            </div>
+          </div>
+        </div>
+        <div class="annotation">3 tool calls consume most of the viewport. User can't see assistant's analysis without scrolling.</div>
+      </div>
+      <div class="side">
+        <div class="side-label after">AFTER (collapsed by default, click to expand)</div>
+        <div style="background:#000; border-radius:12px; padding:8px;">
+          <div class="chat-mock">
+            <div class="chat-msg user">
+              <div class="label">You</div>
+              Fix the N+1 query in PaymentService
+            </div>
+            <div class="chat-msg assistant" style="font-size:12px; color:var(--dim);">
+              I'll look at the PaymentService to find the N+1 query issue...
+            </div>
+
+            <!-- Collapsed tools -->
+            <div class="chat-msg tool" onclick="document.getElementById('tool1-expand').style.display = document.getElementById('tool1-expand').style.display === 'block' ? 'none' : 'block'; this.querySelector('.tool-icon').classList.toggle('expanded')">
+              <span class="tool-icon">▶</span>
+              <span class="tool-label">Grep</span>
+              <span class="tool-input">"queryByOrderNo"</span>
+              <span class="tool-status ok">✓</span>
+            </div>
+            <div id="tool1-expand" class="tool-expanded" style="display:none">
+              pattern: "queryByOrderNo", path: "src/"<br>
+              → Found 3 matches in 2 files
+            </div>
+
+            <div class="chat-msg tool" onclick="document.getElementById('tool2-expand').style.display = document.getElementById('tool2-expand').style.display === 'block' ? 'none' : 'block'; this.querySelector('.tool-icon').classList.toggle('expanded')">
+              <span class="tool-icon">▶</span>
+              <span class="tool-label">Read</span>
+              <span class="tool-input">PaymentService.java:130</span>
+              <span class="tool-status ok">✓</span>
+            </div>
+            <div id="tool2-expand" class="tool-expanded" style="display:none">
+              file_path: "src/services/PaymentService.java"<br>
+              offset: 130, limit: 50
+            </div>
+
+            <div class="chat-msg tool" onclick="document.getElementById('tool3-expand').style.display = document.getElementById('tool3-expand').style.display === 'block' ? 'none' : 'block'; this.querySelector('.tool-icon').classList.toggle('expanded')">
+              <span class="tool-icon">▶</span>
+              <span class="tool-label">Read</span>
+              <span class="tool-input">PaymentDAO.java</span>
+              <span class="tool-status ok">✓</span>
+            </div>
+            <div id="tool3-expand" class="tool-expanded" style="display:none">
+              file_path: "src/dao/PaymentDAO.java"<br>
+              → @Select("SELECT * FROM payment WHERE...
+            </div>
+
+            <!-- Thinking block collapsed -->
+            <div class="thinking-block" onclick="document.getElementById('think1').style.display = document.getElementById('think1').style.display === 'block' ? 'none' : 'block'">
+              <span class="toggle">▶</span>
+              <span>Thinking...</span>
+              <span style="margin-left:auto; font-size:9px; color:var(--dim2)">~200 words</span>
+            </div>
+            <div id="think1" style="display:none; padding:6px 12px 6px 20px; font-size:11px; color:rgba(255,255,255,0.3); font-style:italic;">
+              The N+1 issue is in the loop at line 142 where each order triggers a separate query...
+            </div>
+
+            <div class="chat-msg assistant" style="font-size:12px;">
+              Found it. The N+1 is at <code style="background:rgba(255,255,255,0.08); padding:1px 4px; border-radius:3px; font-size:11px;">PaymentService.java:142</code> — the <code style="background:rgba(255,255,255,0.08); padding:1px 4px; border-radius:3px; font-size:11px;">queryByOrderNo()</code> call is inside a loop...
+            </div>
+          </div>
+        </div>
+        <div class="annotation">
+          Each tool = 1 line: <code>▶ ToolName input_summary ✓</code>. Click to expand details.<br>
+          Thinking blocks also collapsed with word count hint.<br>
+          <strong>Result</strong>: 3x more conversation visible in the same viewport.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- PROPOSAL 5: Hover Peek Preview -->
+  <!-- ============================================ -->
+  <div class="proposal" id="p5">
+    <div class="proposal-header">
+      <span class="tag tag-p2">P2</span>
+      <h2>Hover Peek Preview (Closed State)</h2>
+    </div>
+    <p class="proposal-desc">
+      Currently, any interaction with the notch requires fully opening the panel. For quick checks ("what's that checkmark about?"), a lightweight peek card on hover reduces the interaction cost from "click → scan → click back" to just "glance."
+    </p>
+    <div class="single-col">
+      <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+        <div style="font-size:10px; color:var(--dim2); text-align:center;">CLOSED STATE (with sessions)</div>
+
+        <!-- Closed notch -->
+        <div class="notch-mock" style="width: 320px;">
+          <div class="notch-closed">
+            <span class="status-text">搬砖中..</span>
+            <div class="spacer"></div>
+            <div class="dots">
+              <span class="dot-check">✓</span>
+              <div class="dot-run"></div>
+              <div class="dot-idle"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:10px; color:var(--dim2); display:flex; align-items:center; gap:4px;">
+          <span>↑</span> hover 0.5s <span>↓</span>
+        </div>
+
+        <!-- Peek card appears below -->
+        <div class="peek-card" id="peek-demo">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <div style="color:var(--green); font-size:14px; font-weight:700;">✓</div>
+            <div>
+              <div class="peek-title">Fix payment N+1 query</div>
+              <div class="peek-detail">
+                Done <span style="color:var(--amber);">3m ago</span>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="width:6px; height:6px; border-radius:50%; background:var(--orange); animation: breathe 1.5s ease-in-out infinite;"></div>
+            <div>
+              <div class="peek-title" style="font-size:11px; color:var(--dim);">Refactor auth middleware</div>
+              <div class="peek-detail" style="font-size:10px;">
+                <span class="tool-name" style="font-size:10px;">Bash</span>
+                <span style="font-size:10px;">running 12m</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="annotation" style="max-width: 400px; margin: 12px auto 0;">
+          <strong>Trigger</strong>: hover on closed notch for 0.5s (not click).<br>
+          <strong>Content</strong>: top 2 sessions by priority, with time tags.<br>
+          <strong>Dismiss</strong>: mouse leave. No click needed.<br>
+          <strong>Full panel</strong>: click through to open as usual.<br>
+          Reduces "curious glance" cost from 2 clicks to 0 clicks.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- PROPOSAL 6: Action Button Weight + Row Hints -->
+  <!-- ============================================ -->
+  <div class="proposal" id="p6">
+    <div class="proposal-header">
+      <span class="tag tag-p3">P3</span>
+      <h2>Action Button Hierarchy & Interaction Hints</h2>
+    </div>
+    <p class="proposal-desc">
+      Current action buttons are visually identical (same size, same opacity). The hidden interactions (single-tap = focus, double-tap = chat) have zero affordance. Proposal: size buttons by frequency, add subtle interaction hints on hover.
+    </p>
+    <div class="comparison">
+      <div class="side">
+        <div class="side-label before">BEFORE</div>
+        <div style="background:#000; border-radius:12px; padding:4px 0;">
+          <!-- Waiting row -->
+          <div class="instance-row">
+            <div class="indicator"><div class="check-indicator">✓</div></div>
+            <div class="info">
+              <div class="title">Fix payment N+1 query</div>
+              <div class="detail">Ready for your input</div>
+            </div>
+            <div class="actions">
+              <button class="icon-btn">💬</button>
+              <button class="icon-btn">👁</button>
+              <button class="icon-btn">📦</button>
+            </div>
+          </div>
+          <!-- Processing row -->
+          <div class="instance-row">
+            <div class="indicator"><div class="progress-bar"></div></div>
+            <div class="info">
+              <div class="title">Refactor auth middleware</div>
+              <div class="detail">
+                <span class="tool-name">Edit</span>
+                <span>src/auth/middleware.ts</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="icon-btn">💬</button>
+              <button class="icon-btn">📦</button>
+            </div>
+          </div>
+        </div>
+        <div class="annotation">
+          All buttons same size (24x24) and opacity (0.4).<br>
+          Single-tap row = focus terminal: completely invisible.<br>
+          Double-tap row = chat: completely invisible.
+        </div>
+      </div>
+      <div class="side">
+        <div class="side-label after">AFTER</div>
+        <div style="background:#000; border-radius:12px; padding:4px 0;">
+          <!-- Waiting row - hover state shown -->
+          <div class="instance-row" style="background:rgba(255,255,255,0.06);">
+            <div class="indicator"><div class="check-indicator">✓</div></div>
+            <div class="info">
+              <div class="title">Fix payment N+1 query</div>
+              <div class="detail">Ready for your input</div>
+              <div class="hover-hint">
+                <span class="arrow">→</span> click to focus terminal
+                <span style="margin-left:8px; color:var(--dim3);">|</span>
+                <span style="margin-left:8px;">double-click for chat</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="action-primary" title="Chat">💬</button>
+            </div>
+          </div>
+          <!-- Processing row -->
+          <div class="instance-row">
+            <div class="indicator"><div class="progress-bar"></div></div>
+            <div class="info">
+              <div class="title">Refactor auth middleware</div>
+              <div class="detail">
+                <span class="tool-name">Edit</span>
+                <span>src/auth/middleware.ts</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="action-primary" title="Chat">💬</button>
+            </div>
+          </div>
+        </div>
+        <div class="annotation">
+          <strong>Chat button</strong>: larger (28px), subtle bg — primary action always visible.<br>
+          <strong>Archive</strong>: removed from row, moved to swipe-left or long-press context menu (low freq).<br>
+          <strong>Hover hint</strong>: appears under title on hover — teaches tap/double-tap shortcuts.<br>
+          <strong>Focus icon</strong>: removed — the row itself is the focus target (already implemented).
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- PROPOSAL 7: Background Layer Differentiation -->
+  <!-- ============================================ -->
+  <div class="proposal" id="p7">
+    <div class="proposal-header">
+      <span class="tag tag-p3">P3</span>
+      <h2>Visual Layer Separation in Opened State</h2>
+    </div>
+    <p class="proposal-desc">
+      The opened panel is pure #000 — header, instances, and menu sections have no visual boundary. Adding micro-contrast between sections creates implicit grouping without explicit dividers.
+    </p>
+    <div class="comparison">
+      <div class="side">
+        <div class="side-label before">BEFORE</div>
+        <div class="panel-mock" style="background:#000;">
+          <div class="panel-header" style="border-bottom:none;">
+            <span style="font-size:10px; font-weight:900; color:var(--orange);">搬砖中..</span>
+            <span style="flex:1"></span>
+            <div style="width:16px; height:3px; border-radius:2px; background:rgba(255,255,255,0.22);"></div>
+          </div>
+          <div style="padding:4px 12px 12px;">
+            <div class="instance-row" style="padding:8px;">
+              <div class="indicator"><div class="progress-bar"></div></div>
+              <div class="info">
+                <div class="title" style="font-size:12px;">Auth middleware</div>
+                <div class="detail" style="font-size:10px;"><span class="tool-name">Bash</span></div>
+              </div>
+            </div>
+            <div class="instance-row" style="padding:8px;">
+              <div class="indicator"><div class="check-indicator" style="font-size:14px;">✓</div></div>
+              <div class="info">
+                <div class="title" style="font-size:12px;">Payment N+1</div>
+                <div class="detail" style="font-size:10px;">Done</div>
+              </div>
+            </div>
+            <div class="instance-row" style="padding:8px;">
+              <div class="indicator"><div style="width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,0.2);"></div></div>
+              <div class="info">
+                <div class="title" style="font-size:12px;">Pipeline logging</div>
+                <div class="detail" style="font-size:10px;">Idle</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="annotation">Flat black. Header blends into content. Rows float in void.</div>
+      </div>
+      <div class="side">
+        <div class="side-label after">AFTER</div>
+        <div class="layer-demo" style="background:#000; box-shadow:0 4px 24px rgba(0,0,0,0.5);">
+          <!-- Header: slightly lighter -->
+          <div class="layer-section alt" style="border-radius:19px 19px 0 0; padding:8px 16px; display:flex; align-items:center; gap:8px;">
+            <span style="font-size:10px; font-weight:900; color:var(--orange);">搬砖中..</span>
+            <span style="flex:1"></span>
+            <div style="font-size:13px; color:rgba(255,255,255,0.5);">⚙</div>
+          </div>
+          <!-- Content: pure black -->
+          <div class="layer-section base" style="padding:4px 12px 12px;">
+            <div class="instance-row" style="padding:8px;">
+              <div class="indicator"><div class="progress-bar"></div></div>
+              <div class="info">
+                <div class="title" style="font-size:12px;">Auth middleware</div>
+                <div class="detail" style="font-size:10px;"><span class="tool-name">Bash</span> <span class="time-tag">12m</span></div>
+              </div>
+              <button class="icon-btn" style="font-size:10px;">💬</button>
+            </div>
+            <div class="instance-row" style="padding:8px;">
+              <div class="indicator"><div class="check-indicator" style="font-size:14px;">✓</div></div>
+              <div class="info">
+                <div class="title" style="font-size:12px;">Payment N+1</div>
+                <div class="detail" style="font-size:10px;">Done <span class="time-tag urgent">3m ago</span></div>
+              </div>
+              <button class="icon-btn" style="font-size:10px;">💬</button>
+            </div>
+            <div class="instance-row" style="padding:8px;">
+              <div class="indicator"><div style="width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,0.2);"></div></div>
+              <div class="info">
+                <div class="title" style="font-size:12px;">Pipeline logging</div>
+                <div class="detail" style="font-size:10px;">Idle</div>
+              </div>
+              <button class="icon-btn" style="font-size:10px;">💬</button>
+            </div>
+          </div>
+        </div>
+        <div class="annotation">
+          <strong>Header zone</strong>: <code>#0d0d0d</code> — just enough contrast to feel like a "toolbar."<br>
+          <strong>Content zone</strong>: <code>#000000</code> — stays true black for OLED/notch blending.<br>
+          Difference is only 5% luminance — subliminal grouping, not a jarring split.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div style="margin-top:64px; padding:24px; border:1px solid var(--border); border-radius:16px; background:var(--card);">
+    <h2 style="font-size:18px; margin-bottom:16px;">Summary</h2>
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:8px 12px; color:var(--dim); font-weight:600; font-size:11px;">PRIORITY</th>
+          <th style="text-align:left; padding:8px 12px; color:var(--dim); font-weight:600; font-size:11px;">PROPOSAL</th>
+          <th style="text-align:left; padding:8px 12px; color:var(--dim); font-weight:600; font-size:11px;">EFFORT</th>
+          <th style="text-align:left; padding:8px 12px; color:var(--dim); font-weight:600; font-size:11px;">IMPACT</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid var(--dim3);">
+          <td style="padding:8px 12px;"><span class="tag tag-p0" style="font-size:10px;">P0</span></td>
+          <td style="padding:8px 12px;">Running Duration Tags</td>
+          <td style="padding:8px 12px; color:var(--green);">Small</td>
+          <td style="padding:8px 12px;">Multi-session triage</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--dim3);">
+          <td style="padding:8px 12px;"><span class="tag tag-p1" style="font-size:10px;">P1</span></td>
+          <td style="padding:8px 12px;">Menu Button Icon</td>
+          <td style="padding:8px 12px; color:var(--green);">Small</td>
+          <td style="padding:8px 12px;">Settings discoverability</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--dim3);">
+          <td style="padding:8px 12px;"><span class="tag tag-p1" style="font-size:10px;">P1</span></td>
+          <td style="padding:8px 12px;">Empty State & Onboarding</td>
+          <td style="padding:8px 12px; color:var(--amber);">Medium</td>
+          <td style="padding:8px 12px;">First-run conversion</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--dim3);">
+          <td style="padding:8px 12px;"><span class="tag tag-p2" style="font-size:10px;">P2</span></td>
+          <td style="padding:8px 12px;">Tool Call Folding</td>
+          <td style="padding:8px 12px; color:var(--amber);">Medium</td>
+          <td style="padding:8px 12px;">Chat readability 3x</td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--dim3);">
+          <td style="padding:8px 12px;"><span class="tag tag-p2" style="font-size:10px;">P2</span></td>
+          <td style="padding:8px 12px;">Hover Peek Preview</td>
+          <td style="padding:8px 12px; color:var(--red);">Large</td>
+          <td style="padding:8px 12px;">Glance without opening</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;"><span class="tag tag-p3" style="font-size:10px;">P3</span></td>
+          <td style="padding:8px 12px;">Button Hierarchy + Layer Contrast</td>
+          <td style="padding:8px 12px; color:var(--green);">Small</td>
+          <td style="padding:8px 12px;">Visual polish</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- Navigation dots -->
+<nav class="nav-toc">
+  <a href="#p1" title="Duration Tags"></a>
+  <a href="#p2" title="Menu Button"></a>
+  <a href="#p3" title="Empty State"></a>
+  <a href="#p4" title="Tool Folding"></a>
+  <a href="#p5" title="Hover Peek"></a>
+  <a href="#p6" title="Button Hierarchy"></a>
+  <a href="#p7" title="Layer Contrast"></a>
+</nav>
+
+</body>
+</html>

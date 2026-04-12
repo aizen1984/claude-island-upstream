@@ -28,7 +28,6 @@ struct NotchView: View {
     @State private var statusPhrase: String = ""
     @State private var dotCount: Int = 0
     @State private var wasProcessing: Bool = false
-
     @AppStorage("status.text.preset") private var statusTextPreset: String = "搬砖中"
 
     /// Whether any Claude session is currently processing or compacting
@@ -310,6 +309,10 @@ struct NotchView: View {
             // Header row - always present, contains crab and spinner that persist across states
             headerRow
                 .frame(height: max(24, closedNotchSize.height))
+                .background(viewModel.status == .opened
+                    ? Color(white: 0.05) // Subtle layer separation in opened state
+                    : Color.clear
+                )
 
             // Main content only when opened
             if viewModel.status == .opened {
@@ -430,7 +433,7 @@ struct NotchView: View {
 
             Spacer()
 
-            // Menu toggle
+            // Menu toggle — shows gearshape when idle, progress bar when processing
             Button {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     viewModel.toggleMenu()
@@ -440,16 +443,20 @@ struct NotchView: View {
                 }
             } label: {
                 ZStack(alignment: .topTrailing) {
-                    // Customization: looping progress bar as the menu button's
-                    // visual. Click behavior preserved by the outer Button.
-                    HeaderProgressBar(
-                        tint: isProcessing
-                            ? TerminalColors.prompt
-                            : .white
-                    )
-                        .frame(width: 16, height: 3)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
+                    if isProcessing {
+                        HeaderProgressBar(tint: TerminalColors.prompt)
+                            .frame(width: 16, height: 3)
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                            .transition(.opacity)
+                    } else {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.5))
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                            .transition(.opacity)
+                    }
 
                     // Green dot for unseen update
                     if updateManager.hasUnseenUpdate && viewModel.contentType != .menu {
@@ -459,6 +466,7 @@ struct NotchView: View {
                             .offset(x: -2, y: 2)
                     }
                 }
+                .animation(.easeInOut(duration: 0.2), value: isProcessing)
             }
             .buttonStyle(.plain)
         }

@@ -725,13 +725,31 @@ struct ToolCallView: View {
 
                 Spacer()
 
-                // Expand indicator (only for expandable tools)
-                if canExpand && tool.status != .running && tool.status != .waitingForApproval {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.white.opacity(0.3))
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isExpanded)
+                // Status indicator + expand chevron for completed tools
+                if tool.status == .success || tool.status == .error || tool.status == .interrupted || canExpand {
+                    HStack(spacing: 4) {
+                        if tool.status == .success {
+                            Text("✓")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.green.opacity(0.6))
+                        } else if tool.status == .error {
+                            Text("✗")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.red.opacity(0.6))
+                        } else if tool.status == .interrupted {
+                            Text("⊘")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.gray.opacity(0.5))
+                        }
+
+                        if canExpand {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(.white.opacity(0.2))
+                                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                                .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isExpanded)
+                        }
+                    }
                 }
             }
 
@@ -925,40 +943,46 @@ struct ThinkingView: View {
 
     @State private var isExpanded = false
 
-    private var canExpand: Bool {
-        text.count > 80
+    private var wordCount: Int {
+        text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Circle()
-                .fill(Color.gray.opacity(0.5))
-                .frame(width: 6, height: 6)
-                .padding(.top, 4)
-
-            Text(isExpanded ? text : String(text.prefix(80)) + (canExpand ? "..." : ""))
-                .font(.system(size: 11))
-                .foregroundColor(.gray)
-                .italic()
-                .lineLimit(isExpanded ? nil : 1)
-                .multilineTextAlignment(.leading)
-
-            Spacer()
-
-            if canExpand {
+        VStack(alignment: .leading, spacing: 4) {
+            // Collapsed header — always visible
+            HStack(spacing: 6) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.gray.opacity(0.5))
+                    .foregroundColor(.gray.opacity(0.4))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .padding(.top, 3)
+
+                Text("Thinking...")
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray.opacity(0.5))
+                    .italic()
+
+                Spacer()
+
+                Text("~\(wordCount) words")
+                    .font(.system(size: 9))
+                    .foregroundColor(.gray.opacity(0.3))
+            }
+
+            // Expanded content
+            if isExpanded {
+                Text(text)
+                    .font(.system(size: 11))
+                    .foregroundColor(.gray.opacity(0.6))
+                    .italic()
+                    .multilineTextAlignment(.leading)
+                    .padding(.leading, 15)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            if canExpand {
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                    isExpanded.toggle()
-                }
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                isExpanded.toggle()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

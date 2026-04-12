@@ -13,27 +13,100 @@ struct ClaudeInstancesView: View {
     @ObservedObject var sessionMonitor: ClaudeSessionMonitor
     @ObservedObject var viewModel: NotchViewModel
 
+    @State private var now = Date()
+    private let durationClock = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
+
     var body: some View {
         if sessionMonitor.instances.isEmpty {
             emptyState
         } else {
             instancesList
+                .onReceive(durationClock) { _ in now = Date() }
         }
     }
 
     // MARK: - Empty State
 
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Text("No sessions")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.white.opacity(0.4))
+    @State private var hooksInstalled: Bool = false
 
-            Text("Run claude in terminal")
-                .font(.system(size: 11))
-                .foregroundColor(.white.opacity(0.25))
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            if hooksInstalled {
+                // Hooks OK — just no sessions running yet
+                Text("No active sessions")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white.opacity(0.4))
+
+                HStack(spacing: 4) {
+                    Text("Start")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.25))
+                    Text("claude")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.35))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.white.opacity(0.06))
+                        .cornerRadius(3)
+                    Text("in any terminal")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.25))
+                }
+
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(TerminalColors.green)
+                        .frame(width: 5, height: 5)
+                    Text("Hooks installed")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.2))
+                }
+                .padding(.top, 4)
+            } else {
+                // Hooks NOT installed — prominent CTA
+                Text("Hooks not installed")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(TerminalColors.amber)
+
+                Text("Claude Island needs hooks to communicate with Claude Code")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.3))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+
+                Button {
+                    HookInstaller.installIfNeeded()
+                    hooksInstalled = HookInstaller.isInstalled()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Install Hooks")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(
+                        Capsule().fill(TerminalColors.prompt)
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(Color.red.opacity(0.6))
+                        .frame(width: 5, height: 5)
+                    Text("~/.claude/hooks not configured")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.2))
+                }
+                .padding(.top, 2)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear { hooksInstalled = HookInstaller.isInstalled() }
     }
 
     // MARK: - Instances List
@@ -72,6 +145,7 @@ struct ClaudeInstancesView: View {
                 ForEach(sortedInstances) { session in
                     InstanceRow(
                         session: session,
+                        now: now,
                         onFocus: { focusSession(session) },
                         onChat: { openChat(session) },
                         onArchive: { archiveSession(session) },
@@ -127,6 +201,7 @@ struct ClaudeInstancesView: View {
 
 struct InstanceRow: View {
     let session: SessionState
+    let now: Date
     let onFocus: () -> Void
     let onChat: () -> Void
     let onArchive: () -> Void
@@ -134,12 +209,7 @@ struct InstanceRow: View {
     let onReject: () -> Void
 
     @State private var isHovered = false
-    @State private var spinnerPhase = 0
     @State private var isYabaiAvailable = false
-
-    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
-    private let spinnerSymbols = ["·", "✢", "✳", "∗", "✻", "✽"]
-    private let spinnerTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
     /// Whether we're showing the approval UI
     private var isWaitingForApproval: Bool {
@@ -229,9 +299,29 @@ struct InstanceRow: View {
                         .foregroundColor(.white.opacity(0.4))
                         .lineLimit(1)
                 }
+
+                // Hover hint for waitingForInput rows — teaches tap shortcuts
+                if isHovered && session.phase == .waitingForInput {
+                    HStack(spacing: 4) {
+                        Text("→")
+                            .foregroundColor(TerminalColors.prompt.opacity(0.6))
+                        Text("click to focus terminal")
+                            .foregroundColor(.white.opacity(0.25))
+                    }
+                    .font(.system(size: 9))
+                    .transition(.opacity)
+                }
             }
 
             Spacer(minLength: 0)
+
+            // Duration tag
+            if let durationText = durationInfo.label {
+                Text(durationText)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(durationInfo.color)
+                    .fixedSize()
+            }
 
             // Action icons or approval buttons
             if isWaitingForApproval && isInteractiveTool {
@@ -258,11 +348,21 @@ struct InstanceRow: View {
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             } else {
-                HStack(spacing: 8) {
-                    // Chat icon - always show
-                    IconButton(icon: "bubble.left") {
+                HStack(spacing: 6) {
+                    // Chat button — primary action, slightly larger
+                    Button {
                         onChat()
+                    } label: {
+                        Image(systemName: "bubble.left")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.55))
+                            .frame(width: 28, height: 28)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7)
+                                    .fill(Color.white.opacity(0.06))
+                            )
                     }
+                    .buttonStyle(.plain)
 
                     // Focus icon (only for tmux instances with yabai)
                     if session.isInTmux && isYabaiAvailable {
@@ -271,7 +371,7 @@ struct InstanceRow: View {
                         }
                     }
 
-                    // Archive button - only for idle or completed sessions
+                    // Archive — smaller, low-frequency action
                     if session.phase == .idle || session.phase == .waitingForInput {
                         IconButton(icon: "archivebox") {
                             onArchive()
@@ -309,13 +409,44 @@ struct InstanceRow: View {
         }
     }
 
+    // MARK: - Duration
+
+    /// Combined duration info — computes elapsed once for both label and color
+    private var durationInfo: (label: String?, color: Color) {
+        switch session.phase {
+        case .processing, .compacting, .waitingForApproval:
+            let elapsed = now.timeIntervalSince(session.createdAt)
+            guard elapsed >= 5 else { return (nil, .white.opacity(0.3)) }
+            return (formatDuration(elapsed), .white.opacity(0.3))
+        case .waitingForInput:
+            let elapsed = now.timeIntervalSince(session.lastActivity)
+            let color: Color = elapsed > 60 ? TerminalColors.amber : .white.opacity(0.3)
+            guard elapsed >= 30 else { return (nil, color) }
+            return (formatAgo(elapsed), color)
+        default:
+            return (nil, .white.opacity(0.3))
+        }
+    }
+
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        if seconds < 60 { return "\(Int(seconds))s" }
+        if seconds < 3600 { return "\(Int(seconds / 60))m" }
+        return "\(Int(seconds / 3600))h\(Int(seconds.truncatingRemainder(dividingBy: 3600) / 60))m"
+    }
+
+    private func formatAgo(_ seconds: TimeInterval) -> String {
+        if seconds < 60 { return "\(Int(seconds))s ago" }
+        if seconds < 3600 { return "\(Int(seconds / 60))m ago" }
+        return "\(Int(seconds / 3600))h ago"
+    }
+
     @ViewBuilder
     private var stateIndicator: some View {
         switch session.phase {
         case .processing, .compacting:
             // Customization: replaced ugly unicode-character spinner
             // with a looping progress bar (Claude orange).
-            HeaderProgressBar(tint: claudeOrange)
+            HeaderProgressBar(tint: TerminalColors.prompt)
                 .frame(width: 12, height: 3)
         case .waitingForApproval:
             HeaderProgressBar(tint: TerminalColors.amber)
