@@ -46,6 +46,14 @@ class NotchViewModel: ObservableObject {
     @Published var contentType: NotchContentType = .instances
     @Published var isHovering: Bool = false
 
+    // Expansion state lives on the ViewModel (not @State in the row views)
+    // so NotchView can reactively grow `openedSize` when the status picker
+    // opens. (The Indicator picker was removed in the Session Constellation
+    // refactor — there is only one user-expandable menu picker now.)
+    @Published var menuStatusPickerExpanded: Bool = false
+
+    static let menuStatusPickerExpansionHeight: CGFloat = 230
+
     // MARK: - Dependencies
 
     private let screenSelector = ScreenSelector.shared
@@ -71,10 +79,14 @@ class NotchViewModel: ObservableObject {
                 height: 580
             )
         case .menu:
-            // Compact size for settings menu
+            let statusExpansion: CGFloat = menuStatusPickerExpanded
+                ? Self.menuStatusPickerExpansionHeight : 0
             return CGSize(
                 width: min(screenRect.width * 0.4, 480),
-                height: 420 + screenSelector.expandedPickerHeight + soundSelector.expandedPickerHeight
+                height: 610
+                    + screenSelector.expandedPickerHeight
+                    + soundSelector.expandedPickerHeight
+                    + statusExpansion
             )
         case .instances:
             return CGSize(
@@ -244,6 +256,7 @@ class NotchViewModel: ObservableObject {
         }
         status = .closed
         contentType = .instances
+        menuStatusPickerExpanded = false
     }
 
     func notchPop() {
@@ -258,6 +271,15 @@ class NotchViewModel: ObservableObject {
 
     func toggleMenu() {
         contentType = contentType == .menu ? .instances : .menu
+        if contentType != .menu {
+            menuStatusPickerExpanded = false
+        }
+    }
+
+    // MARK: - Menu Pickers
+
+    func toggleStatusPicker() {
+        menuStatusPickerExpanded.toggle()
     }
 
     func showChat(for session: SessionState) {

@@ -20,8 +20,9 @@ class NotchWindowController: NSWindowController {
         let screenFrame = screen.frame
         let notchSize = screen.notchSize
 
-        // Window covers full width at top, tall enough for largest content (chat view)
-        let windowHeight: CGFloat = 750
+        // Height budget: base menu (610) + max picker expansion (270) + margin.
+        // Fits 14" MBP (982 logical height).
+        let windowHeight: CGFloat = 900
         let windowFrame = NSRect(
             x: screenFrame.origin.x,
             y: screenFrame.maxY - windowHeight,

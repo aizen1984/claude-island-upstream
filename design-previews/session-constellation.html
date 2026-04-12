@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Session Constellation — Live Preview</title>
+<style>
+  :root {
+    /* Colors pulled directly from TerminalColors.swift */
+    --claude-orange: #d97857;        /* TerminalColors.prompt */
+    --claude-green: #66bf73;         /* TerminalColors.green — 102,191,115 */
+    --idle-ring: rgba(255,255,255,0.45);
+    --notch-bg: #000;
+    --page-bg: #1e1e1e;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--page-bg);
+    color: #ddd;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 840px;
+    margin: 0 auto;
+    padding: 48px 32px 96px;
+  }
+
+  h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    margin: 0 0 6px;
+  }
+  .subtitle {
+    font-size: 12px;
+    opacity: 0.55;
+    margin: 0 0 36px;
+    line-height: 1.55;
+  }
+  .subtitle code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+
+  /* ── Legend ───────────────────────────── */
+  .legend {
+    display: flex;
+    gap: 28px;
+    font-size: 11px;
+    padding: 14px 20px;
+    background: rgba(255,255,255,0.035);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    opacity: 0.85;
+  }
+
+  /* ── Scenario list ────────────────────── */
+  .scenarios {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+  .scenario {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 28px;
+    align-items: center;
+  }
+  .label { font-size: 11px; line-height: 1.5; opacity: 0.55; }
+  .label strong {
+    display: block;
+    color: #f0f0f0;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 3px;
+    opacity: 1;
+  }
+  .label em {
+    font-style: normal;
+    color: var(--claude-orange);
+  }
+
+  /* ── Notch (real pixel dimensions) ────── */
+  .notch {
+    display: inline-flex;
+    align-items: center;
+    height: 32px;                 /* real notch height */
+    padding: 0 12px;
+    background: var(--notch-bg);
+    border-radius: 0 0 14px 14px;  /* flat top, rounded bottom */
+    width: max-content;
+  }
+
+  .status-text {
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.2px;
+    color: var(--claude-orange);
+    white-space: nowrap;
+    margin-right: 10px;
+  }
+
+  /* ── Constellation dots ───────────────── */
+  .constellation {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;            /* spacing between dots */
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  }
+
+  /* running — filled Claude orange + breathing pulse */
+  .dot.running {
+    background: var(--claude-orange);
+    animation: breathe 1.5s ease-in-out infinite;
+  }
+
+  /* compacting — same color, faster pulse */
+  .dot.compacting {
+    background: var(--claude-orange);
+    animation: breathe 0.9s ease-in-out infinite;
+  }
+
+  /* idle — hollow static ring */
+  .dot.idle {
+    background: transparent;
+    border: 1px solid var(--idle-ring);
+  }
+
+  /* done — green checkmark glyph (replaces dot slot) */
+  .dot.done {
+    width: 11px;
+    height: 11px;
+    background: transparent;
+    border: none;
+    color: var(--claude-green);
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .overflow {
+    font-size: 9px;
+    font-weight: 900;
+    color: rgba(255,255,255,0.45);
+    margin-left: 2px;
+    letter-spacing: 0.3px;
+  }
+
+  @keyframes breathe {
+    0%, 100% { opacity: 0.55; transform: scale(0.92); }
+    50%      { opacity: 1.00; transform: scale(1.00); }
+  }
+
+  /* ── Divider for comparison section ───── */
+  .divider {
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 20px 0 12px;
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e5e5e5;
+    margin: 24px 0 20px;
+    letter-spacing: 0.2px;
+  }
+
+  /* ── Old-style progress bar (for compare) ── */
+  .old-progress {
+    display: inline-block;
+    width: 24px;
+    height: 3px;
+    border-radius: 1.5px;
+    background:
+      linear-gradient(90deg,
+        transparent 0%,
+        var(--claude-orange) 20%,
+        var(--claude-orange) 80%,
+        transparent 100%);
+    background-size: 200% 100%;
+    animation: slide 1.2s linear infinite;
+  }
+  @keyframes slide {
+    0%   { background-position: -100% 0; }
+    100% { background-position:  100% 0; }
+  }
+
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+  .ruler {
+    font-size: 10px;
+    opacity: 0.38;
+    font-family: "SF Mono", Menlo, monospace;
+    margin-left: 4px;
+  }
+
+  /* ── Life-size wallpaper preview ──────── */
+  .wallpaper {
+    margin-top: 48px;
+    padding: 28px 20px 40px;
+    background:
+      linear-gradient(135deg, #c8a882 0%, #d4b896 40%, #e5d5b7 100%);
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+  .wallpaper-label {
+    font-size: 10px;
+    color: rgba(0,0,0,0.55);
+    text-align: center;
+    margin-bottom: 12px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .wallpaper .notch-container {
+    display: flex;
+    justify-content: center;
+  }
+
+  /* ── Fit chart (1:1 pixel widths) ──────── */
+  .fit-note {
+    font-size: 12px;
+    opacity: 0.6;
+    line-height: 1.65;
+    margin: 0 0 28px;
+  }
+  .fit-note strong { color: #e8e8e8; opacity: 1; }
+  .fit-note code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: "SF Mono", Menlo, monospace;
+  }
+
+  .fit-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .fit-row {
+    display: grid;
+    grid-template-columns: 190px 1fr 130px;
+    gap: 20px;
+    align-items: center;
+  }
+  .fit-name {
+    font-size: 11px;
+    opacity: 0.7;
+    text-align: right;
+    line-height: 1.45;
+  }
+  .fit-name small {
+    display: block;
+    opacity: 0.55;
+    font-size: 10px;
+    margin-top: 1px;
+  }
+  .fit-bar {
+    height: 32px;
+    border-radius: 0 0 14px 14px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 12px;
+    box-sizing: border-box;
+    background: var(--notch-bg);
+  }
+  .fit-bar.reference {
+    background: transparent;
+    border: 1px dashed rgba(255,255,255,0.28);
+    border-top: none;
+  }
+  .fit-bar .spacer { flex: 1; }
+  .fit-size {
+    font-size: 10px;
+    font-family: "SF Mono", Menlo, monospace;
+    opacity: 0.7;
+    line-height: 1.5;
+  }
+  .fit-pct { opacity: 0.75; }
+  .fit-delta {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-top: 3px;
+    letter-spacing: 0.2px;
+  }
+  .fit-delta.good  { color: #9edba4; background: rgba(102,191,115,0.12); }
+  .fit-delta.same  { color: #c8c8c8; background: rgba(255,255,255,0.08); }
+  .fit-delta.warn  { color: #ffc876; background: rgba(255,178,0,0.12); }
+
+  /* Compact progress bar for current-version comparison */
+  .old-progress-compact {
+    display: inline-block;
+    width: 24px;
+    height: 3px;
+    border-radius: 1.5px;
+    background:
+      linear-gradient(90deg,
+        transparent 0%,
+        var(--claude-orange) 25%,
+        var(--claude-orange) 75%,
+        transparent 100%);
+    background-size: 200% 100%;
+    animation: slide 1.2s linear infinite;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Session Constellation · 真实效果演示</h1>
+  <p class="subtitle">
+    像素级还原：notch 高 <code>32px</code>、点直径 <code>6px</code>、点间距 <code>4px</code>、
+    状态文字 <code>10px/900</code>。颜色取自 <code>TerminalColors.swift</code>：
+    橙 <code>#d97857</code>，绿 <code>#66bf73</code>。
+    呼吸 <code>1.5s</code> 周期，相邻 running 点相位错开 <code>0.25s</code>。
+  </p>
+
+  <!-- LEGEND -->
+  <div class="legend">
+    <div class="legend-item">
+      <span class="dot running"></span>
+      <span>running · 呼吸橙</span>
+    </div>
+    <div class="legend-item">
+      <span class="dot idle"></span>
+      <span>idle · 静止灰环</span>
+    </div>
+    <div class="legend-item">
+      <span class="dot done">✓</span>
+      <span>完成 · 绿勾（沿用现有）</span>
+    </div>
+    <div class="legend-item">
+      <span class="dot compacting"></span>
+      <span>compacting · 急促橙</span>
+    </div>
+  </div>
+
+  <!-- SCENARIOS -->
+  <div class="scenarios">
+
+    <div class="scenario">
+      <div class="label">
+        <strong>A — 1 running</strong>
+        最常见：单工位呼吸
+      </div>
+      <div class="notch">
+        <span class="status-text">牛马中…</span>
+        <div class="constellation">
+          <span class="dot running" style="animation-delay:0s"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="label">
+        <strong>B — 2 running + 1 idle</strong>
+        典型多工位；相邻 running 点呼吸错相
+      </div>
+      <div class="notch">
+        <span class="status-text">牛马中…</span>
+        <div class="constellation">
+          <span class="dot running" style="animation-delay:0s"></span>
+          <span class="dot running" style="animation-delay:0.25s"></span>
+          <span class="dot idle"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="label">
+        <strong>C — <em>★ 三色混合 ★</em></strong>
+        1 完成 + 2 跑 + 1 闲<br>现有设计完全缺失的全貌视图
+      </div>
+      <div class="notch">
+        <span class="status-text">牛马中…</span>
+        <div class="constellation">
+          <span class="dot done">✓</span>
+          <span class="dot running" style="animation-delay:0s"></span>
+          <span class="dot running" style="animation-delay:0.25s"></span>
+          <span class="dot idle"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="label">
+        <strong>D — 全闲</strong>
+        零动效；status 自动切到"闲着了"
+      </div>
+      <div class="notch">
+        <span class="status-text">闲着了…</span>
+        <div class="constellation">
+          <span class="dot idle"></span>
+          <span class="dot idle"></span>
+          <span class="dot idle"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="label">
+        <strong>E — 全部完成</strong>
+        与现状行为一致
+      </div>
+      <div class="notch">
+        <span class="status-text">搞定啦…</span>
+        <div class="constellation">
+          <span class="dot done">✓</span>
+          <span class="dot done">✓</span>
+          <span class="dot done">✓</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="label">
+        <strong>F — 7 sessions（溢出）</strong>
+        前 4 原生 + <code>·+3</code>
+      </div>
+      <div class="notch">
+        <span class="status-text">牛马中…</span>
+        <div class="constellation">
+          <span class="dot running" style="animation-delay:0s"></span>
+          <span class="dot running" style="animation-delay:0.25s"></span>
+          <span class="dot running" style="animation-delay:0.5s"></span>
+          <span class="dot running" style="animation-delay:0.75s"></span>
+          <span class="overflow">·+3</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="label">
+        <strong>G — compacting</strong>
+        更快脉冲暗示"过渡态"
+      </div>
+      <div class="notch">
+        <span class="status-text">整理中…</span>
+        <div class="constellation">
+          <span class="dot compacting"></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- COMPARISON -->
+  <div class="divider"></div>
+  <div class="section-title">旧版 vs 新版 · 信息密度对比</div>
+
+  <div class="scenario">
+    <div class="label">
+      <strong>当前设计</strong>
+      只能回答"有没有在跑"
+    </div>
+    <div class="stack">
+      <div class="notch">
+        <span class="status-text">牛马中…</span>
+        <span class="old-progress"></span>
+      </div>
+      <div class="ruler">↑ 1 session? 3 sessions? 看不出</div>
+    </div>
+  </div>
+
+  <div class="scenario" style="margin-top:18px">
+    <div class="label">
+      <strong>新方案</strong>
+      同一场景：1 完成 + 2 跑 + 1 闲
+    </div>
+    <div class="stack">
+      <div class="notch">
+        <span class="status-text">牛马中…</span>
+        <div class="constellation">
+          <span class="dot done">✓</span>
+          <span class="dot running" style="animation-delay:0s"></span>
+          <span class="dot running" style="animation-delay:0.25s"></span>
+          <span class="dot idle"></span>
+        </div>
+      </div>
+      <div class="ruler">↑ 一眼看见 4 个工位 · 每个在做什么</div>
+    </div>
+  </div>
+
+  <!-- FIT CHECK -->
+  <div class="divider" style="margin-top:56px"></div>
+  <div class="section-title">尺寸预算 · 能放得下吗？</div>
+
+  <p class="fit-note">
+    参考机型 MacBook Pro 14"：物理 notch <code>180pt</code>，屏幕逻辑宽 <code>1512pt</code>。<br>
+    <strong>Island 在 closed 态是自由扩展的</strong>（<code>NotchView.swift:165</code> closed 时 maxWidth=nil）——
+    物理 notch 只是锚点不是硬边界。所以"能放下"问的是：扩展后是否仍然优雅。
+    下面按 <strong>1:1 真实像素</strong>画出每种情况，右侧是实测宽度 / 屏占比 / 相对现版的增量：
+  </p>
+
+  <div class="fit-chart">
+
+    <div class="fit-row">
+      <div class="fit-name">物理 notch 外框<small>仅参考线 · 不渲染</small></div>
+      <div class="fit-bar reference" style="width:180px"></div>
+      <div class="fit-size">180pt<br><span class="fit-pct">11.9%</span></div>
+    </div>
+
+    <div class="fit-row">
+      <div class="fit-name">现版 · processing<small>基线</small></div>
+      <div class="fit-bar" style="width:272px">
+        <span class="status-text">牛马中…</span>
+        <span class="spacer"></span>
+        <span class="old-progress-compact"></span>
+      </div>
+      <div class="fit-size">272pt<br><span class="fit-pct">18.0%</span><br><span class="fit-delta same">baseline</span></div>
+    </div>
+
+    <div class="fit-row">
+      <div class="fit-name">新版 · 1 running</div>
+      <div class="fit-bar" style="width:260px">
+        <span class="status-text">牛马中…</span>
+        <span class="spacer"></span>
+        <div class="constellation">
+          <span class="dot running" style="animation-delay:0s"></span>
+        </div>
+      </div>
+      <div class="fit-size">260pt<br><span class="fit-pct">17.2%</span><br><span class="fit-delta good">−12pt ✓</span></div>
+    </div>
+
+    <div class="fit-row">
+      <div class="fit-name">新版 · 2 跑 + 1 闲</div>
+      <div class="fit-bar" style="width:280px">
+        <span class="status-text">牛马中…</span>
+        <span class="spacer"></span>
+        <div class="constellation">
+          <span class="dot running" style="animation-delay:0s"></span>
+          <span class="dot running" style="animation-delay:0.25s"></span>
+          <span class="dot idle"></span>
+        </div>
+      </div>
+      <div class="fit-size">280pt<br><span class="fit-pct">18.5%</span><br><span class="fit-delta good">+8pt</span></div>
+    </div>
+
+    <div class="fit-row">
+      <div class="fit-name">新版 · 三色混合<small>1✓ + 2● + 1○ (场景 C)</small></div>
+      <div class="fit-bar" style="width:296px">
+        <span class="status-text">牛马中…</span>
+        <span class="spacer"></span>
+        <div class="constellation">
+          <span class="dot done">✓</span>
+          <span class="dot running" style="animation-delay:0s"></span>
+          <span class="dot running" style="animation-delay:0.25s"></span>
+          <span class="dot idle"></span>
+        </div>
+      </div>
+      <div class="fit-size">296pt<br><span class="fit-pct">19.6%</span><br><span class="fit-delta warn">+24pt</span></div>
+    </div>
+
+    <div class="fit-row">
+      <div class="fit-name">新版 · 4 running 满载</div>
+      <div class="fit-bar" style="width:290px">
+        <span class="status-text">牛马中…</span>
+        <span class="spacer"></span>
+        <div class="constellation">
+          <span class="dot running" style="animation-delay:0s"></span>
+          <span class="dot running" style="animation-delay:0.25s"></span>
+          <span class="dot running" style="animation-delay:0.5s"></span>
+          <span class="dot running" style="animation-delay:0.75s"></span>
+        </div>
+      </div>
+      <div class="fit-size">290pt<br><span class="fit-pct">19.2%</span><br><span class="fit-delta warn">+18pt</span></div>
+    </div>
+
+    <div class="fit-row">
+      <div class="fit-name">新版 · 7 sessions 溢出<small>最坏情况</small></div>
+      <div class="fit-bar" style="width:308px">
+        <span class="status-text">牛马中…</span>
+        <span class="spacer"></span>
+        <div class="constellation">
+          <span class="dot running" style="animation-delay:0s"></span>
+          <span class="dot running" style="animation-delay:0.25s"></span>
+          <span class="dot running" style="animation-delay:0.5s"></span>
+          <span class="dot running" style="animation-delay:0.75s"></span>
+          <span class="overflow">·+3</span>
+        </div>
+      </div>
+      <div class="fit-size">308pt<br><span class="fit-pct">20.4%</span><br><span class="fit-delta warn">+36pt</span></div>
+    </div>
+
+  </div>
+
+  <p class="fit-note" style="margin-top:36px">
+    <strong>结论：</strong>
+    1 session 时新版 <strong>更窄</strong>（−12pt）；常见 2–3 session 时几乎持平（+8 ~ +24pt）；
+    4 session 满载 +18pt；7+ 溢出的最坏情况 +36pt。
+    最宽 <strong>308pt = 20.4%</strong> 屏占比，对比 iOS "录音中" 胶囊（约 22%）仍然更克制。<br><br>
+    <strong>高度方向</strong>：6pt 点居中在 32pt notch 里，上下各 13pt 留白，宽裕。<br>
+    <strong>答案：</strong>放得下，而且在最常见情况下反而更紧凑。
+  </p>
+
+  <!-- LIFE-SIZE WALLPAPER PREVIEW -->
+  <div class="wallpaper">
+    <div class="wallpaper-label">Desktop 1:1 preview · 桌面背景下的真实感受</div>
+    <div class="notch-container">
+      <div class="notch">
+        <span class="status-text">牛马中…</span>
+        <div class="constellation">
+          <span class="dot done">✓</span>
+          <span class="dot running" style="animation-delay:0s"></span>
+          <span class="dot running" style="animation-delay:0.25s"></span>
+          <span class="dot idle"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

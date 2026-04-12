@@ -29,7 +29,7 @@ struct NotchView: View {
     @State private var dotCount: Int = 0
     @State private var wasProcessing: Bool = false
 
-    @Namespace private var activityNamespace
+    @AppStorage("status.text.preset") private var statusTextPreset: String = "搬砖中"
 
     /// Whether any Claude session is currently processing or compacting
     private var isAnyProcessing: Bool {
@@ -68,18 +68,19 @@ struct NotchView: View {
         )
     }
 
-    /// Extra width for the compact header's right-side indicators.
-    ///
-    /// Layout: base slot for the crab (left) + dynamic slot for N checkmarks
-    /// (right). Each checkmark is `checkmarkIconSize` wide with
-    /// `checkmarkSpacing` between; the block also has its own side padding.
-    /// When there are no attention sessions we fall back to a fixed-width
-    /// slot for the processing progress bar (if processing).
-    /// Measured width for the current status phrase + "..." (max dots).
+    /// Extra width the compact header needs on top of the physical notch
+    /// cutout. Composed of:
+    ///   · leftSlot  — status text ("牛马中…") with leading padding
+    ///   · rightSlot — SessionConstellationView (✓ / ● / ○ dot row)
+    /// Both slots grow/shrink reactively with session count, so the island
+    /// only takes the space it actually needs.
     private var statusTextSlotWidth: CGFloat {
         guard hasAnySessions, !statusPhrase.isEmpty else { return 0 }
-        let fullText = statusPhrase + "..."
-        let font = NSFont.systemFont(ofSize: 9, weight: .semibold)
+        // Matches the invisible sizing Text in headerRow — 4 dots, not 3,
+        // so the width budget tracks the actual render. See comment on
+        // the ZStack sizing trick for why we use 4.
+        let fullText = statusPhrase + "...."
+        let font = NSFont.systemFont(ofSize: 10, weight: .black)
         let size = (fullText as NSString).size(withAttributes: [.font: font])
         return ceil(size.width)
     }
@@ -88,30 +89,56 @@ struct NotchView: View {
         let leftSlot = statusTextSlotWidth + 12 // +12 for leading padding
         guard leftSlot > 12 else { return 0 }
 
-        if hasAttention {
-            let count = CGFloat(attentionSessions.count)
-            let checkmarksWidth = count * Self.checkmarkIconSize
-                + max(0, count - 1) * Self.checkmarkSpacing
-                + Self.checkmarkBlockPadding
-            return leftSlot + checkmarksWidth
+        let constellation = constellationSlotWidth()
+        if constellation > 0 {
+            // +12 trailing padding after the dot row
+            return leftSlot + constellation + 12
         }
-
-        if isProcessing {
-            let rightSlot = max(0, closedNotchSize.height - 12) + 10
-            return leftSlot + rightSlot
-        }
-
         return leftSlot
     }
 
-    /// Layout constants for the multi-checkmark indicator.
-    /// Tuned for the Dynamic Island aesthetic: thin SF Symbol checkmark
-    /// glyphs (no filled circle background), small size, tight spacing.
-    /// The filled-circle variant looked like approval badges — too loud
-    /// against the black notch.
-    private static let checkmarkIconSize: CGFloat = 11
-    private static let checkmarkSpacing: CGFloat = 5
-    private static let checkmarkBlockPadding: CGFloat = 10
+    /// Pixel budget for the SessionConstellationView on the right of the
+    /// closed notch. Must stay in sync with the actual layout in
+    /// `SessionConstellationView.body` — change both together.
+    private func constellationSlotWidth() -> CGFloat {
+        let instances = sessionMonitor.instances
+        let attentionCount = instances.filter {
+            $0.needsAttention && !ackTracker.isAcknowledged($0.sessionId)
+        }.count
+        let runningCount = instances.filter {
+            $0.phase == .processing || $0.phase == .compacting
+        }.count
+        let idleCount = instances.filter { $0.phase == .idle }.count
+
+        let total = attentionCount + runningCount + idleCount
+        guard total > 0 else { return 0 }
+
+        // Priority-ordered visibility capping: ✓ → ● → ○
+        let maxVisible = SessionConstellationView.maxVisible
+        let visibleAttention = min(attentionCount, maxVisible)
+        let remainingAfterA = maxVisible - visibleAttention
+        let visibleRunning = min(runningCount, remainingAfterA)
+        let remainingAfterR = remainingAfterA - visibleRunning
+        let visibleIdle = min(idleCount, remainingAfterR)
+        let visibleCount = visibleAttention + visibleRunning + visibleIdle
+        let overflowCount = max(0, total - maxVisible)
+
+        var width: CGFloat = 0
+        width += CGFloat(visibleAttention) * SessionConstellationView.checkSize
+        width += CGFloat(visibleRunning + visibleIdle) * SessionConstellationView.dotSize
+
+        let slotCount = visibleCount + (overflowCount > 0 ? 1 : 0)
+        if slotCount > 1 {
+            width += CGFloat(slotCount - 1) * SessionConstellationView.spacing
+        }
+
+        if overflowCount > 0 {
+            // "·+N" at 9px monospaced black — measured ~16–20pt, budget 18
+            width += 18
+        }
+
+        return width
+    }
 
     private var notchSize: CGSize {
         switch viewModel.status {
@@ -223,6 +250,18 @@ struct NotchView: View {
             handleWaitingForInputChange(instances)
             refreshStatusPhrase()
         }
+        .onChange(of: statusTextPreset) { _, newPreset in
+            // User changed the Status preset — update the displayed text
+            // immediately without waiting for the next session event.
+            guard isAnyProcessing else { return }
+            if newPreset.isEmpty {
+                let hour = Calendar.current.component(.hour, from: Date())
+                let count = sessionMonitor.instances.count
+                statusPhrase = StatusPhrases.smartWorking(hour: hour, sessionCount: count)
+            } else {
+                statusPhrase = newPreset
+            }
+        }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             dotCount = (dotCount + 1) % 4
         }
@@ -233,14 +272,23 @@ struct NotchView: View {
         let hour = Calendar.current.component(.hour, from: Date())
         let count = sessionMonitor.instances.count
 
+        // Working phrase respects the user's Status preset:
+        //   - empty string → random (StatusPhrases.smartWorking)
+        //   - otherwise    → fixed to the preset
+        func workingPhrase() -> String {
+            statusTextPreset.isEmpty
+                ? StatusPhrases.smartWorking(hour: hour, sessionCount: count)
+                : statusTextPreset
+        }
+
         if nowProcessing != wasProcessing {
             wasProcessing = nowProcessing
             statusPhrase = nowProcessing
-                ? StatusPhrases.smartWorking(hour: hour, sessionCount: count)
+                ? workingPhrase()
                 : StatusPhrases.smartIdle(hour: hour)
         } else if statusPhrase.isEmpty && hasAnySessions {
             statusPhrase = nowProcessing
-                ? StatusPhrases.smartWorking(hour: hour, sessionCount: count)
+                ? workingPhrase()
                 : StatusPhrases.smartIdle(hour: hour)
         }
     }
@@ -285,20 +333,26 @@ struct NotchView: View {
     private var headerRow: some View {
         HStack(spacing: 0) {
             // Left side - animated status text.
-            // ZStack with hidden max-width text locks the width so dot animation
-            // doesn't cause jitter, and .fixedSize() prevents truncation.
+            //
+            // Sizing trick: an invisible "statusPhrase + ...." (4 dots, one
+            // more than the max visible cycle) forms the width floor via
+            // fixedSize, so the visible text can freely animate 0–3 dots
+            // without the layout hunting its own width. The extra dot is
+            // cheap headroom — it guarantees the 3-dot animation phase
+            // renders fully even when font metrics are slightly off.
             if showClosedActivity && viewModel.status != .opened {
                 ZStack(alignment: .leading) {
-                    Text(statusPhrase + "...")
-                        .font(.system(size: 9, weight: .semibold))
+                    Text(statusPhrase + "....")
+                        .font(.system(size: 10, weight: .black))
                         .opacity(0)
                     Text(statusPhrase + String(repeating: ".", count: dotCount))
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(Color(red: 0.85, green: 0.47, blue: 0.34))
+                        .font(.system(size: 10, weight: .black))
+                        .foregroundColor(TerminalColors.prompt)
                 }
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.leading, 8)
+                .padding(.trailing, 6)
             }
 
             // Center content
@@ -311,42 +365,51 @@ struct NotchView: View {
                     .fill(.clear)
                     .frame(width: closedNotchSize.width - 20)
             } else {
-                // Closed with activity: black spacer. No bounce — the island
-                // never animates its own width beyond what the indicators need.
+                // Closed with activity: fixed-width black spacer covering
+                // the physical notch cutout. Must be a rigid Rectangle and
+                // NOT a Spacer — a Spacer inside an unconstrained HStack
+                // greedily grows to fill the full window width, which on
+                // a 1500+pt screen means the island eats every running
+                // app's tab bar. Been there; don't do it again.
+                //
+                // The fixed width = physical notch width - top corner
+                // radius, which is exactly the interior of the notch shape.
+                // Any content on the left (status text) or right (session
+                // constellation) extends outside the physical cutout onto
+                // the menu bar strip, which is rendered black by the same
+                // background modifier.
                 Rectangle()
                     .fill(.black)
                     .frame(width: closedNotchSize.width - cornerRadiusInsets.closed.top)
             }
 
-            // Right side - only in closed state.
+            // Right side — Session Constellation (closed state only).
+            //
+            // Replaces the old "either N checkmarks OR a progress bar"
+            // binary with a unified dot row: ✓ for attention, ● for running
+            // (breathing), ○ for idle. Lets the user see the full fleet at
+            // a glance, not just "something is happening" vs "someone wants
+            // input". See SessionConstellationView for layout details.
             if showClosedActivity && viewModel.status != .opened {
-                if hasAttention {
-                    HStack(spacing: Self.checkmarkSpacing) {
-                        ForEach(attentionSessions, id: \.stableId) { _ in
-                            Image(systemName: "checkmark")
-                                .font(.system(
-                                    size: Self.checkmarkIconSize,
-                                    weight: .semibold
-                                ))
-                                .foregroundColor(TerminalColors.green)
-                        }
-                    }
-                    .padding(.horizontal, Self.checkmarkBlockPadding / 2)
-                } else if isProcessing {
-                    // Customization: replaced ugly unicode-character spinner
-                    // with a looping progress bar (Claude orange).
-                    HeaderProgressBar(tint: Color(red: 0.85, green: 0.47, blue: 0.34))
-                        .matchedGeometryEffect(id: "spinner", in: activityNamespace, isSource: showClosedActivity)
-                        .frame(width: 18, height: 3)
-                        .frame(width: viewModel.status == .opened ? 20 : sideWidth)
-                }
+                SessionConstellationView(
+                    sessions: sessionMonitor.instances,
+                    unacknowledgedAttentionIds: unacknowledgedAttentionIds
+                )
+                .padding(.trailing, 8)
             }
         }
         .frame(height: closedNotchSize.height)
     }
 
-    private var sideWidth: CGFloat {
-        max(0, closedNotchSize.height - 12) + 10
+    /// Set of session IDs in an attention phase that the user has not yet
+    /// dismissed via acknowledgment. Computed once so both the expansion
+    /// width budget and the SessionConstellationView see a consistent view.
+    private var unacknowledgedAttentionIds: Set<String> {
+        Set(
+            sessionMonitor.instances
+                .filter { $0.needsAttention && !ackTracker.isAcknowledged($0.sessionId) }
+                .map(\.sessionId)
+        )
     }
 
     // MARK: - Opened Header Content
@@ -356,8 +419,8 @@ struct NotchView: View {
         HStack(spacing: 12) {
             if hasAnySessions, !statusPhrase.isEmpty {
                 Text(statusPhrase + String(repeating: ".", count: dotCount))
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(Color(red: 0.85, green: 0.47, blue: 0.34))
+                    .font(.system(size: 10, weight: .black))
+                    .foregroundColor(TerminalColors.prompt)
                     .lineLimit(1)
                     .padding(.leading, 8)
             } else {
@@ -381,7 +444,7 @@ struct NotchView: View {
                     // visual. Click behavior preserved by the outer Button.
                     HeaderProgressBar(
                         tint: isProcessing
-                            ? Color(red: 0.85, green: 0.47, blue: 0.34)
+                            ? TerminalColors.prompt
                             : .white
                     )
                         .frame(width: 16, height: 3)

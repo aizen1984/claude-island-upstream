@@ -21,7 +21,10 @@ struct NotchMenuView: View {
     @State private var hooksInstalled: Bool = false
     @State private var launchAtLogin: Bool = false
 
+    @AppStorage("status.text.preset") private var statusTextPreset: String = "搬砖中"
+
     var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
         VStack(spacing: 4) {
             // Back button
             MenuRow(
@@ -38,6 +41,8 @@ struct NotchMenuView: View {
             // Appearance settings
             ScreenPickerRow(screenSelector: screenSelector)
             SoundPickerRow(soundSelector: soundSelector)
+
+            StatusTextPickerRow(selection: $statusTextPreset, viewModel: viewModel)
 
             Divider()
                 .background(Color.white.opacity(0.08))
@@ -108,6 +113,8 @@ struct NotchMenuView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .top)
+        }  // ScrollView
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
             refreshStates()
@@ -476,6 +483,194 @@ struct MenuRow: View {
             return Color(red: 1.0, green: 0.4, blue: 0.4)
         }
         return .white.opacity(isHovered ? 1.0 : 0.7)
+    }
+}
+
+// Generic inline-expanding menu row. Collapsed state shows icon + label +
+// current value + chevron. Expanded content is arbitrary. Expansion state
+// is owned by the caller (typically NotchViewModel) so it can drive
+// panel-height growth.
+struct InlinePickerRow<ExpandedContent: View>: View {
+    let icon: String
+    let label: String
+    let value: String
+    let isExpanded: Bool
+    let onTap: () -> Void
+    @ViewBuilder let expandedContent: () -> ExpandedContent
+
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: onTap) {
+                HStack(spacing: 10) {
+                    Image(systemName: icon)
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(isHovered ? 1.0 : 0.7))
+                        .frame(width: 16)
+                    Text(label)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(isHovered ? 1.0 : 0.7))
+                    Spacer()
+                    Text(value)
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.6))
+                        .lineLimit(1)
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.35))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isHovered ? Color.white.opacity(0.08) : Color.clear)
+                )
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
+
+            if isExpanded {
+                expandedContent()
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+}
+
+// Text input in a .accessory / .nonactivatingPanel setup requires three things
+// to cooperate: (1) panel must be key — NotchWindowController calls makeKey()
+// on .opened; (2) app must be active — we call NSApp.activate() on expand;
+// (3) @FocusState must be set programmatically after the TextField actually
+// mounts — SwiftUI won't auto-focus inside a nonactivating panel.
+struct StatusTextPickerRow: View {
+    @Binding var selection: String
+    @ObservedObject var viewModel: NotchViewModel
+    @State private var draft: String = ""
+    @FocusState private var inputFocused: Bool
+
+    private var isExpanded: Bool { viewModel.menuStatusPickerExpanded }
+
+    var body: some View {
+        InlinePickerRow(
+            icon: "text.bubble",
+            label: "Status",
+            value: StatusTextPresets.label(for: selection),
+            isExpanded: isExpanded,
+            onTap: handleTap
+        ) {
+            VStack(spacing: 6) {
+                inputField
+                presetList
+            }
+            .padding(.leading, 28)
+            .padding(.trailing, 8)
+            .padding(.top, 4)
+            .padding(.bottom, 6)
+        }
+    }
+
+    private func handleTap() {
+        let willExpand = !isExpanded
+        withAnimation(.easeInOut(duration: 0.2)) {
+            viewModel.toggleStatusPicker()
+        }
+        if willExpand {
+            draft = selection
+            NSApp.activate(ignoringOtherApps: true)
+            // Delay lets the TextField mount before @FocusState binds.
+            // Guard protects against the user collapsing before the delay.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                guard viewModel.menuStatusPickerExpanded else { return }
+                inputFocused = true
+            }
+        } else {
+            inputFocused = false
+        }
+    }
+
+    private func commit(_ newValue: String) {
+        selection = newValue
+        withAnimation(.easeInOut(duration: 0.2)) {
+            viewModel.menuStatusPickerExpanded = false
+        }
+    }
+
+    private var inputField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "pencil")
+                .font(.system(size: 10))
+                .foregroundColor(.white.opacity(0.5))
+            TextField("输入自定义文字...", text: $draft)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundColor(.white)
+                .focused($inputFocused)
+                .onSubmit { commit(draft) }
+            if !draft.isEmpty {
+                Button { commit(draft) } label: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(TerminalColors.prompt)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.white.opacity(0.08))
+        )
+    }
+
+    private var presetList: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 2) {
+                ForEach(StatusTextPresets.all, id: \.self) { preset in
+                    PickerOptionRow(
+                        label: StatusTextPresets.label(for: preset),
+                        isSelected: preset == selection,
+                        accent: TerminalColors.prompt
+                    ) {
+                        draft = preset
+                        commit(preset)
+                    }
+                }
+            }
+        }
+        .frame(maxHeight: 160)
+    }
+}
+
+struct PickerOptionRow: View {
+    let label: String
+    let isSelected: Bool
+    let accent: Color
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 10))
+                    .foregroundColor(isSelected ? accent : .white.opacity(0.3))
+                Text(label)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(.white.opacity(isSelected ? 1.0 : (isHovered ? 0.9 : 0.65)))
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(isHovered ? Color.white.opacity(0.06) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }
 
