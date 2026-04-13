@@ -22,16 +22,24 @@ struct HookInstaller {
             withIntermediateDirectories: true
         )
 
-        // Customization: only install bundled template if hook file is missing.
-        // Respects user customizations (e.g., auto-allow patches) across app restarts.
-        // To force reinstall, user must manually delete the file first.
-        if !FileManager.default.fileExists(atPath: pythonScript.path),
-           let bundled = Bundle.main.url(forResource: "claude-island-state", withExtension: "py") {
-            try? FileManager.default.copyItem(at: bundled, to: pythonScript)
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: 0o755],
-                ofItemAtPath: pythonScript.path
-            )
+        // Install or upgrade: compare "# claude-island-hook vN" version tag.
+        // Bundled version wins when strictly greater than installed version.
+        if let bundled = Bundle.main.url(forResource: "claude-island-state", withExtension: "py") {
+            let needsInstall: Bool
+            if !FileManager.default.fileExists(atPath: pythonScript.path) {
+                needsInstall = true
+            } else {
+                needsInstall = hookVersion(at: bundled) > hookVersion(at: pythonScript)
+            }
+
+            if needsInstall {
+                try? FileManager.default.removeItem(at: pythonScript)
+                try? FileManager.default.copyItem(at: bundled, to: pythonScript)
+                try? FileManager.default.setAttributes(
+                    [.posixPermissions: 0o755],
+                    ofItemAtPath: pythonScript.path
+                )
+            }
         }
 
         updateSettings(at: settings)
@@ -178,6 +186,19 @@ struct HookInstaller {
         ) {
             try? data.write(to: settings)
         }
+    }
+
+    /// Extract version number from "# claude-island-hook vN" in the script header.
+    /// Returns 0 if the tag is missing (pre-versioning scripts).
+    private static func hookVersion(at url: URL) -> Int {
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return 0 }
+        for line in content.prefix(500).split(separator: "\n").prefix(5) {
+            if line.hasPrefix("# claude-island-hook v"),
+               let version = Int(line.dropFirst("# claude-island-hook v".count).trimmingCharacters(in: .whitespaces)) {
+                return version
+            }
+        }
+        return 0
     }
 
     private static func detectPython() -> String {

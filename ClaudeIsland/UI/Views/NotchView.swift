@@ -58,13 +58,33 @@ struct NotchView: View {
         !sessionMonitor.instances.isEmpty
     }
 
+    // MARK: - Morphing Shape
+
+    private enum MorphingShape: Equatable {
+        case rest      // idle or no sessions
+        case runway    // processing — wider
+        case bubble    // waitingForApproval — wider + taller
+    }
+
+    private var morphingShape: MorphingShape {
+        let sessions = sessionMonitor.instances
+        if sessions.contains(where: { $0.phase.isWaitingForApproval }) { return .bubble }
+        if sessions.contains(where: { $0.phase.isActive }) { return .runway }
+        return .rest
+    }
+
     // MARK: - Sizing
 
     private var closedNotchSize: CGSize {
-        CGSize(
-            width: viewModel.deviceNotchRect.width,
-            height: viewModel.deviceNotchRect.height
-        )
+        let base = viewModel.deviceNotchRect
+        switch morphingShape {
+        case .rest:
+            return CGSize(width: base.width, height: base.height)
+        case .runway:
+            return CGSize(width: base.width + 12, height: base.height)
+        case .bubble:
+            return CGSize(width: base.width + 8, height: base.height + 4)
+        }
     }
 
     /// Extra width the compact header needs on top of the physical notch
@@ -162,9 +182,14 @@ struct NotchView: View {
     }
 
     private var bottomCornerRadius: CGFloat {
-        viewModel.status == .opened
-            ? cornerRadiusInsets.opened.bottom
-            : cornerRadiusInsets.closed.bottom
+        if viewModel.status == .opened {
+            return cornerRadiusInsets.opened.bottom
+        }
+        switch morphingShape {
+        case .rest:    return cornerRadiusInsets.closed.bottom
+        case .runway:  return cornerRadiusInsets.closed.bottom + 2
+        case .bubble:  return cornerRadiusInsets.closed.bottom + 4
+        }
     }
 
     private var currentNotchShape: NotchShape {
@@ -208,6 +233,13 @@ struct NotchView: View {
                         color: (viewModel.status == .opened || isHovering) ? .black.opacity(0.7) : .clear,
                         radius: 6
                     )
+                    .overlay(alignment: .bottom) {
+                        if viewModel.status != .opened && hasAnySessions {
+                            StatusLightStrip(sessions: sessionMonitor.instances)
+                                .offset(y: 5)
+                                .transition(.opacity)
+                        }
+                    }
                     .frame(
                         maxWidth: viewModel.status == .opened ? notchSize.width : nil,
                         maxHeight: viewModel.status == .opened ? notchSize.height : nil,
@@ -218,6 +250,7 @@ struct NotchView: View {
                     .animation(.smooth, value: activityCoordinator.expandingActivity)
                     .animation(.smooth, value: hasAttention)
                     .animation(.smooth, value: attentionSessions.count)
+                    .animation(.smooth(duration: 0.6), value: morphingShape)
                     .contentShape(Rectangle())
                     .onHover { hovering in
                         withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {

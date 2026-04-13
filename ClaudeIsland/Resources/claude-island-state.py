@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# claude-island-hook v1
 """
 Claude Island Hook
 - Sends session state to ClaudeIsland.app via Unix socket
