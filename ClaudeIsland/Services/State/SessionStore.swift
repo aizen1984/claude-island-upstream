@@ -30,6 +30,18 @@ actor SessionStore {
     /// Sync debounce interval (100ms)
     private let syncDebounceNs: UInt64 = 100_000_000
 
+    /// Idle session cleanup timer
+    private var idleCleanupTask: Task<Void, Never>?
+
+    /// How long an idle session stays visible before auto-removal (5 minutes)
+    private let idleTimeout: TimeInterval = 5 * 60
+
+    /// How long a waitingForInput session stays visible (30 minutes)
+    private let waitingForInputTimeout: TimeInterval = 30 * 60
+
+    /// Cleanup check interval (60 seconds)
+    private let cleanupIntervalNs: UInt64 = 60_000_000_000
+
     // MARK: - Published State (for UI)
 
     /// Publisher for session state changes (nonisolated for Combine subscription from any context)
@@ -50,7 +62,9 @@ actor SessionStore {
 
     // MARK: - Initialization
 
-    private init() {}
+    private init() {
+        startIdleCleanup()
+    }
 
     // MARK: - Event Processing
 
@@ -966,6 +980,50 @@ actor SessionStore {
     private func cancelPendingSync(sessionId: String) {
         pendingSyncs[sessionId]?.cancel()
         pendingSyncs.removeValue(forKey: sessionId)
+    }
+
+    // MARK: - Idle Session Cleanup
+
+    /// Start periodic cleanup of stale idle sessions
+    private func startIdleCleanup() {
+        idleCleanupTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: self?.cleanupIntervalNs ?? 60_000_000_000)
+                guard !Task.isCancelled else { break }
+                await self?.cleanupIdleSessions()
+            }
+        }
+    }
+
+    /// Remove sessions that have been idle/waitingForInput beyond their timeout
+    private func cleanupIdleSessions() {
+        let now = Date()
+        var removed = false
+
+        for (sessionId, session) in sessions {
+            let elapsed = now.timeIntervalSince(session.lastActivity)
+
+            switch session.phase {
+            case .idle where elapsed > idleTimeout:
+                Self.logger.info("Auto-removing idle session \(sessionId.prefix(8), privacy: .public) (idle \(Int(elapsed))s)")
+                sessions.removeValue(forKey: sessionId)
+                cancelPendingSync(sessionId: sessionId)
+                removed = true
+
+            case .waitingForInput where elapsed > waitingForInputTimeout:
+                Self.logger.info("Auto-removing stale waitingForInput session \(sessionId.prefix(8), privacy: .public) (idle \(Int(elapsed))s)")
+                sessions.removeValue(forKey: sessionId)
+                cancelPendingSync(sessionId: sessionId)
+                removed = true
+
+            default:
+                break
+            }
+        }
+
+        if removed {
+            publishState()
+        }
     }
 
     // MARK: - State Publishing
