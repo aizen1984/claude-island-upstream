@@ -47,6 +47,14 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     var conversationInfo: ConversationInfo
 
+    // MARK: - Compaction Suppression
+
+    /// True when the session transitioned from `.compacting` to `.waitingForInput`.
+    /// Suppresses the attention indicator so the user isn't pinged for a
+    /// post-compaction Stop that isn't a real "I'm done" event.
+    /// Cleared on the next transition to `.processing`.
+    var postCompactStop: Bool
+
     // MARK: - Clear Reconciliation
 
     /// When true, the next file update should reconcile chatItems with parser state
@@ -79,6 +87,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
             summary: nil, lastMessage: nil, lastMessageRole: nil,
             lastToolName: nil, firstUserMessage: nil, lastUserMessageDate: nil
         ),
+        postCompactStop: Bool = false,
         needsClearReconciliation: Bool = false,
         lastActivity: Date = Date(),
         createdAt: Date = Date()
@@ -94,6 +103,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.toolTracker = toolTracker
         self.subagentState = subagentState
         self.conversationInfo = conversationInfo
+        self.postCompactStop = postCompactStop
         self.needsClearReconciliation = needsClearReconciliation
         self.lastActivity = lastActivity
         self.createdAt = createdAt
@@ -103,7 +113,13 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     /// Whether this session needs user attention
     var needsAttention: Bool {
-        phase.needsAttention
+        phase.needsAttention && !postCompactStop
+    }
+
+    /// Whether this session should display as idle in the constellation,
+    /// even if its actual phase is `.waitingForInput` (e.g. post-compaction stop).
+    var isEffectivelyIdle: Bool {
+        phase == .idle || postCompactStop
     }
 
     /// The active permission context, if any
@@ -181,7 +197,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     /// Whether the session can be interacted with
     var canInteract: Bool {
-        phase.needsAttention
+        needsAttention
     }
 }
 

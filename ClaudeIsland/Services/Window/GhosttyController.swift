@@ -148,8 +148,7 @@ enum GhosttyController {
     static func focusTerminal(id: String) -> FocusResult {
         guard isRunning else { return .notRunning }
 
-        // Escape any stray quotes in the UUID string literal.
-        let escaped = id.replacingOccurrences(of: "\"", with: "\\\"")
+        let escaped = TerminalFocusUtilities.escapeForAppleScript(id)
         let source = """
         tell application "Ghostty"
             activate
@@ -176,40 +175,18 @@ enum GhosttyController {
         let terms = enumerateTerminals()
         guard !terms.isEmpty else { return .noMatch }
 
-        // Normalize session title (summary/firstUserMessage) to a decoration-free form.
-        // Claude Island's summary may prefix the title with "#", Ghostty's terminal
-        // name is prefixed with a spinner char (✳/⠂/⠐) + space. After stripping both
-        // we compare by longest common prefix (LCP): humans/LLMs naming the same task
-        // tend to share front-loaded distinctive chars (e.g. "T0扣款成功率...").
-        let normSessionTitle = normalizeTitle(bestTitleFragment(for: session))
-        let targetCwd = session.cwd
+        let titleFragment = TerminalFocusUtilities.bestTitleFragment(for: session)
 
         var bestScore = 0
         var winner: TerminalInfo?
 
         for term in terms {
-            let normTermName = normalizeTitle(term.name)
-            let cwdMatch = term.cwd == targetCwd
-            let lcp = commonPrefixLength(normSessionTitle, normTermName)
-            // Require >= 3 chars common prefix to count as a title signal.
-            // 3 chars filters out accidental "T0..." collisions but is loose
-            // enough to survive different tail wording ("T0扣款" → "T0扣款成功率").
-            let titleMatch = !normSessionTitle.isEmpty && lcp >= 3
-
-            var score = 0
-            if cwdMatch && titleMatch {
-                // Stronger signal when BOTH cwd and title agree. Bump by LCP
-                // length so a 10-char prefix match outranks a 3-char one when
-                // multiple terminals share the same cwd.
-                score = 100 + lcp
-            } else if titleMatch {
-                score = 60 + lcp
-            } else if cwdMatch {
-                score = 50
-            } else if term.cwd.hasPrefix(targetCwd + "/") || targetCwd.hasPrefix(term.cwd + "/") {
-                score = 10
-            }
-
+            let score = TerminalFocusUtilities.matchScore(
+                terminalCwd: term.cwd,
+                terminalName: term.name,
+                sessionCwd: session.cwd,
+                sessionTitle: titleFragment
+            )
             if score > bestScore {
                 bestScore = score
                 winner = term
@@ -220,81 +197,13 @@ enum GhosttyController {
         return focusTerminal(id: winner.id)
     }
 
-    /// Normalize a title string for matching: strip leading non-letter/digit
-    /// decoration chars (spinner, #, ✳, emoji, whitespace), lowercase it.
-    /// Han characters are preserved (Character.isLetter returns true for them).
-    private static func normalizeTitle(_ s: String) -> String {
-        let chars = Array(s)
-        var start = 0
-        while start < chars.count {
-            let c = chars[start]
-            if c.isLetter || c.isNumber { break }
-            start += 1
-        }
-        return String(chars[start...]).lowercased()
-    }
-
-    /// Longest common prefix length (in characters, not bytes) of two strings.
-    private static func commonPrefixLength(_ a: String, _ b: String) -> Int {
-        var count = 0
-        var ai = a.startIndex
-        var bi = b.startIndex
-        while ai < a.endIndex && bi < b.endIndex && a[ai] == b[bi] {
-            count += 1
-            ai = a.index(after: ai)
-            bi = b.index(after: bi)
-        }
-        return count
-    }
-
     // MARK: - Private
 
-    /// Pick the most distinctive, stable text fragment from a SessionState
-    /// to match against Ghostty tab titles. Ghostty tabs look like
-    /// "⠂ Review cc-tdd skill quality" — a spinner char + space + Claude's
-    /// session summary. We take the first ~20 chars of the summary because:
-    ///   - Ghostty may truncate long titles with an ellipsis
-    ///   - Summaries tend to be front-loaded with distinctive words
-    private static func bestTitleFragment(for session: SessionState) -> String {
-        let candidates: [String?] = [
-            session.conversationInfo.summary,
-            session.conversationInfo.firstUserMessage,
-            session.displayTitle
-        ]
-        for candidate in candidates {
-            if let s = candidate?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !s.isEmpty {
-                return String(s.prefix(20))
-            }
-        }
-        return ""
-    }
-
-    /// Run an AppleScript source and return its string result, or nil on error.
-    /// Runs synchronously on the calling thread — NSAppleScript is not thread-safe
-    /// so callers must invoke from the main thread. Typical execution time for
-    /// enumerate-5-tabs on current hardware: ~400ms.
     private static func runAppleScriptForString(_ source: String) -> String? {
-        var errorDict: NSDictionary?
-        guard let script = NSAppleScript(source: source) else { return nil }
-        let descriptor = script.executeAndReturnError(&errorDict)
-        if let errorDict = errorDict {
-            NSLog("[GhosttyController] enumerate error: \(errorDict)")
-            return nil
-        }
-        return descriptor.stringValue
+        TerminalFocusUtilities.runAppleScriptForString(source)
     }
 
-    /// Run an AppleScript source and return any error message, or nil on success.
     private static func runAppleScriptForError(_ source: String) -> String? {
-        var errorDict: NSDictionary?
-        guard let script = NSAppleScript(source: source) else {
-            return "failed to create NSAppleScript"
-        }
-        _ = script.executeAndReturnError(&errorDict)
-        if let errorDict = errorDict {
-            return "\(errorDict)"
-        }
-        return nil
+        TerminalFocusUtilities.runAppleScriptForError(source)
     }
 }

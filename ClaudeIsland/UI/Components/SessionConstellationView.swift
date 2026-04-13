@@ -5,16 +5,15 @@
 //  The "session constellation" — an ambient visualization of every current
 //  Claude session as a row of dots on the right side of the closed notch.
 //
-//  Replaces the previous swappable indicator picker (BrickWall, DotsWave,
-//  EQBars, …) with a single unified view that encodes per-session state via
-//  shape + color + motion:
+//  Encodes per-session state via shape + color + motion:
 //
-//    ✓  attention  (waitingForInput / waitingForApproval)  — green check
-//    ●  running    (processing / compacting)               — orange filled, breathing
-//    ○  idle                                                 — gray ring, static
+//    ✓  attention   (waitingForInput / waitingForApproval) — green check
+//    ◉  compacting  (context compression in progress)     — magenta, squeeze pulse
+//    ●  running     (processing)                          — orange filled, breathing
+//    ○  idle                                               — gray ring, static
 //
 //  Priority order keeps "what needs me now" on the left, "what's resting"
-//  on the right: ✓ → ● → ○. Max 4 slots visible; surplus collapses to
+//  on the right: ✓ → ◉ → ● → ○. Max 4 slots visible; surplus collapses to
 //  `·+N` overflow suffix.
 //
 
@@ -46,17 +45,22 @@ struct SessionConstellationView: View {
         }
     }
 
+    private var compactingSessions: [SessionState] {
+        sessions.filter { $0.phase == .compacting }
+    }
+
     private var runningSessions: [SessionState] {
-        sessions.filter { $0.phase == .processing || $0.phase == .compacting }
+        sessions.filter { $0.phase == .processing }
     }
 
     private var idleSessions: [SessionState] {
-        sessions.filter { $0.phase == .idle }
+        sessions.filter { $0.isEffectivelyIdle }
     }
 
     private var visibleItems: [Item] {
         var items: [Item] = []
         items.append(contentsOf: attentionSessions.map(Item.attention))
+        items.append(contentsOf: compactingSessions.map(Item.compacting))
         items.append(contentsOf: runningSessions.map(Item.running))
         items.append(contentsOf: idleSessions.map(Item.idle))
         return Array(items.prefix(Self.maxVisible))
@@ -64,7 +68,8 @@ struct SessionConstellationView: View {
 
     private var overflowCount: Int {
         let total =
-            attentionSessions.count + runningSessions.count + idleSessions.count
+            attentionSessions.count + compactingSessions.count
+            + runningSessions.count + idleSessions.count
         return max(0, total - Self.maxVisible)
     }
 
@@ -91,24 +96,15 @@ struct SessionConstellationView: View {
     private func itemView(_ item: Item, runningIndex: Int) -> some View {
         switch item {
         case .attention:
-            // Matches the old multi-checkmark glyph from NotchView — same
-            // SF Symbol, same size, same color — so existing muscle memory
-            // (green ✓ = "I'm done, look at me") survives the refactor.
             Image(systemName: "checkmark")
                 .font(.system(size: Self.checkSize, weight: .semibold))
                 .foregroundColor(TerminalColors.green)
                 .frame(width: Self.checkSize, height: Self.checkSize)
-        case .running(let session):
-            BreathingDot(
-                phaseIndex: runningIndex,
-                fast: session.phase == .compacting
-            )
+        case .compacting:
+            CompactingDot()
+        case .running:
+            BreathingDot(phaseIndex: runningIndex)
         case .idle:
-            // 0.8pt stroke (not 1pt) — a 1pt ring on a 6pt frame visually
-            // "blooms" ~12% larger than an equally sized filled circle,
-            // which is why running dots looked smaller than idle rings in
-            // the first draft. Thinner stroke = less optical weight =
-            // better harmony with the filled running dots.
             Circle()
                 .stroke(Color.white.opacity(0.5), lineWidth: 0.8)
                 .frame(width: Self.dotSize, height: Self.dotSize)
@@ -117,8 +113,7 @@ struct SessionConstellationView: View {
 
     /// Returns the zero-based index of this running item among ONLY the
     /// visible running items, so adjacent breathing dots can stagger their
-    /// phase. Non-running items don't count — a constellation of
-    /// `✓ ● ● ○` gives the two running dots indices 0 and 1.
+    /// phase.
     private func runningIndex(for itemIndex: Int, in items: [Item]) -> Int {
         var runningCounter = 0
         for (idx, it) in items.enumerated() {
@@ -134,14 +129,16 @@ struct SessionConstellationView: View {
 
     private enum Item: Identifiable {
         case attention(SessionState)
+        case compacting(SessionState)
         case running(SessionState)
         case idle(SessionState)
 
         var id: String {
             switch self {
-            case .attention(let s): return "a-\(s.stableId)"
-            case .running(let s):   return "r-\(s.stableId)"
-            case .idle(let s):      return "i-\(s.stableId)"
+            case .attention(let s):  return "a-\(s.stableId)"
+            case .compacting(let s): return "c-\(s.stableId)"
+            case .running(let s):    return "r-\(s.stableId)"
+            case .idle(let s):       return "i-\(s.stableId)"
             }
         }
     }
@@ -151,34 +148,19 @@ struct SessionConstellationView: View {
 
 /// A single orange "running" dot with an opacity-only pulse.
 ///
-/// Design note on why this is opacity-only, no scale:
-///   The first draft used `scaleEffect(0.92…1.0)` to add a subtle "beat"
-///   to the breathing, but it made running dots visually shrink below
-///   the idle rings during the breath's trough — destroying constellation
-///   harmony. Dots must stay at a rock-steady 6pt so filled and outline
-///   siblings read as peers; the pulse lives purely in opacity.
-///
 /// Uses `TimelineView(.animation)` rather than `.repeatForever` + `.delay`
 /// because the latter is unreliable for staggered start phases — SwiftUI
 /// sometimes drops the delay on the first cycle, making dots fall into
-/// lockstep. Driving the phase explicitly from wall-clock time sidesteps
-/// that entirely.
-///
-/// Cost: one sine eval per dot per frame. Negligible for ≤4 dots.
+/// lockstep.
 private struct BreathingDot: View {
     let phaseIndex: Int
-    let fast: Bool
 
     var body: some View {
         TimelineView(.animation) { context in
             let elapsed = context.date.timeIntervalSinceReferenceDate
-            let period = fast ? 0.9 : 1.5
+            let period = 1.5
             let offset = Double(phaseIndex) * 0.25
-            // 0..1 sinusoid, staggered per dot
             let t = (sin((elapsed - offset) / period * .pi * 2) + 1) / 2
-            // Tighter opacity range (0.6→1.0) so the dot never fades to
-            // the point where it "disappears" next to the static idle
-            // rings — the pulse should feel like breathing, not blinking.
             let opacity = 0.6 + t * 0.4
 
             Circle()
@@ -187,6 +169,40 @@ private struct BreathingDot: View {
                     width: SessionConstellationView.dotSize,
                     height: SessionConstellationView.dotSize
                 )
+                .opacity(opacity)
+        }
+    }
+}
+
+// MARK: - Compacting Dot
+
+/// A magenta dot with a rhythmic squeeze pulse — shrinks to ~50% then
+/// bounces back, visually suggesting "compression".
+///
+/// The animation uses scale (unlike BreathingDot which is opacity-only)
+/// because the squeezing IS the semantic: the context is being squeezed
+/// smaller. The trough intentionally goes well below the idle ring size
+/// so the user can immediately tell this apart from a normal running dot.
+private struct CompactingDot: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let elapsed = context.date.timeIntervalSinceReferenceDate
+            let period = 0.8
+            // Asymmetric wave: fast squeeze, slower expand (eased)
+            let raw = (sin(elapsed / period * .pi * 2) + 1) / 2  // 0..1
+            let t = raw * raw  // ease-in: spends more time expanded
+            // Scale: 0.5 (squeezed) → 1.0 (full size)
+            let scale = 0.5 + t * 0.5
+            // Opacity: subtle dim at squeeze point
+            let opacity = 0.7 + t * 0.3
+
+            Circle()
+                .fill(TerminalColors.magenta)
+                .frame(
+                    width: SessionConstellationView.dotSize,
+                    height: SessionConstellationView.dotSize
+                )
+                .scaleEffect(scale)
                 .opacity(opacity)
         }
     }

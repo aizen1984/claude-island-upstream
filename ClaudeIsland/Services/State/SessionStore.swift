@@ -163,12 +163,22 @@ actor SessionStore {
             return
         }
 
+        let oldPhase = session.phase
         let newPhase = event.determinePhase()
 
         if session.phase.canTransition(to: newPhase) {
             session.phase = newPhase
         } else {
             Self.logger.debug("Invalid transition: \(String(describing: session.phase), privacy: .public) -> \(String(describing: newPhase), privacy: .public), ignoring")
+        }
+
+        // Suppress attention indicator for post-compaction stops.
+        // When compacting → waitingForInput, it's an internal lifecycle
+        // event, not a real "I'm done, look at me" signal.
+        if oldPhase == .compacting && newPhase == .waitingForInput {
+            session.postCompactStop = true
+        } else {
+            session.postCompactStop = false
         }
 
         if event.event == "PermissionRequest", let toolUseId = event.toolUseId {
@@ -841,6 +851,7 @@ actor SessionStore {
         // Transition to idle
         if session.phase.canTransition(to: .idle) {
             session.phase = .idle
+            session.postCompactStop = false
         }
 
         sessions[sessionId] = session
