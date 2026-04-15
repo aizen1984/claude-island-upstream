@@ -1,0 +1,7 @@
+connection:
+  base_url: "http://moka.dmz.prod.caijj.net"
+  token_file: "/Users/caochen/x-token/moka-prod-x-token.json"
+  timeout: 10
+
+defaults:
+  app_name: "vipship"

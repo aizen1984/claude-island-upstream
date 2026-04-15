@@ -1,0 +1,1868 @@
+{
+  "description": "Skill 激活规则 - 由 Hook(skill-activation-prompt.sh) 运行时读取",
+  "_notice": "此文件由 Hook 运行时解析，Claude 无需主动读取。协作规则见 shared-rules/skill-orchestration.md。",
+  "_activationMode": "所有匹配的 skill 均为强制激活",
+  "globalSettings": {
+    "maxSkillsPerPrompt": 3
+  },
+  "priorityOrder": [
+    "cc-code-reviewer",
+    "cc-design",
+    "cc-planner",
+    "cc-think-first",
+    "cc-adversarial",
+    "cc-work-mode",
+    "cc-tdd",
+    "cc-code-writer",
+    "cc-api-analyzer",
+    "cc-diagram",
+    "cc-web-tester",
+    "cc-troubleshoot",
+    "cc-kb-sync",
+    "cc-ob-session-log",
+    "cc-ob-spark",
+    "cc-ob-aggregate",
+    "cc-ob-bases",
+    "cc-sql",
+    "cc-cfg",
+    "cc-sls-query",
+    "cc-tag",
+    "cc-idaas-token",
+    "cc-skill-creator",
+    "cc-java-backend",
+    "cc-python",
+    "cc-frontend",
+    "cc-eval"
+  ],
+  "tiers": {
+    "guardrail": {
+      "name": "质量守护",
+      "skills": [
+        "cc-code-reviewer"
+      ],
+      "description": "代码审查，最高优先级"
+    },
+    "core-workflow": {
+      "name": "核心执行链",
+      "skills": [
+        "cc-design",
+        "cc-planner",
+        "cc-work-mode",
+        "cc-tdd",
+        "cc-code-writer"
+      ],
+      "description": "开发工作流核心（设计→规划→执行→TDD→编写）"
+    },
+    "analysis-tool": {
+      "name": "分析/工具支持",
+      "skills": [
+        "cc-api-analyzer",
+        "cc-diagram",
+        "cc-web-tester",
+        "cc-troubleshoot",
+        "cc-kb-sync",
+        "cc-ob-session-log",
+        "cc-ob-spark",
+        "cc-ob-aggregate",
+        "cc-ob-bases",
+        "cc-sql",
+        "cc-cfg",
+        "cc-sls-query",
+        "cc-tag",
+        "cc-idaas-token"
+      ],
+      "description": "接口分析、图表生成、网页功能测试、数据库查询、配置查询、SLS日志查询、打tag、知识库同步、Obsidian 知识飞轮（会话日志/主题发现/周月聚合/Bases）"
+    },
+    "meta-tool": {
+      "name": "元工具",
+      "skills": [
+        "cc-skill-creator",
+        "cc-eval"
+      ],
+      "description": "Skill 创建/管理的基础工具"
+    },
+    "standalone": {
+      "name": "独立方法论",
+      "skills": [
+        "cc-think-first",
+        "cc-adversarial"
+      ],
+      "description": "独立方法论协议，可被其他 Skill 内联引用"
+    },
+    "domain-standard": {
+      "name": "领域规范",
+      "skills": [
+        "cc-java-backend",
+        "cc-python",
+        "cc-frontend"
+      ],
+      "description": "作为规范库配合其他 Skill 使用，根据编辑文件语言自动路由"
+    }
+  },
+  "skills": {
+    "cc-code-reviewer": {
+      "type": "guardrail",
+      "tier": "guardrail",
+      "description": "执行九维度代码审查（安全/架构/事务/并发/数据完整性），支持advisory/unified/blocking三种模式。不修改代码、不实现功能。用于PR审查、代码质量检查",
+      "promptTriggers": {
+        "keywords": [
+          "审查",
+          "review",
+          "检查代码",
+          "审核",
+          "code review",
+          "PR",
+          "pull request",
+          "合并请求",
+          "MR",
+          "代码质量",
+          "代码规范",
+          "架构审查",
+          "性能审查",
+          "事务审查",
+          "重构建议",
+          "改进建议",
+          "优化建议",
+          "代码隐患",
+          "代码风险",
+          "安全漏洞",
+          "看下这个",
+          "是否合理",
+          "事务问题",
+          "锁问题",
+          "N+1问题",
+          "并发问题",
+          "代码检视",
+          "审一下",
+          "审查门控",
+          "九维度",
+          "代码有没有",
+          "代码有安全问题",
+          "代码有没有安全"
+        ],
+        "intentPatterns": [
+          "(审查|review|检查|审核|看看|瞅瞅|审一下).*?(代码|PR|变更|提交|文件|实现|diff|refactoring)",
+          "(帮我|请|麻烦).*?(review|审查|检查|查).*?(代码|PR|变更|提交|文件|实现|service|Service)",
+          ".*?(代码|PR|MR|实现).*?(质量|规范|问题|风险|合理)",
+          "(看看|分析|检查).*?(有没有|是否有|有啥).*?(问题|改进|隐患|坑|bug|N\\+1|优化)",
+          "(分析|看看|瞅瞅).*?(这段|这个|这块).*?(代码|实现|逻辑)",
+          ".*?(架构|性能|事务|并发|安全|数据一致|分层).*?(审查|检查|分析|问题|违规)",
+          "这个.*?(写得|实现|设计|改动).*?(怎么样|如何|好不好|对不对|合理|安全)",
+          ".*?(有没有|是否).*?(事务|锁|N\\+1|并发|性能).*?(问题|风险|隐患)",
+          "(advisory|blocking).*?(模式|审)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "修复bug",
+          "修bug",
+          "有bug",
+          "个bug",
+          "这个bug",
+          "异常报错",
+          "异常堆栈",
+          "排查问题",
+          "排查原因",
+          "诊断",
+          "定位问题",
+          "NPE",
+          "根因"
+        ]
+      },
+      "fileTriggers": {
+        "_implementedBy": "claude-context",
+        "_note": "fileTriggers 供 Claude 自身上下文理解使用，非 Hook 运行时匹配。Claude 在读取/编辑匹配文件时参考此配置判断是否需要加载对应 Skill。",
+        "pathPatterns": [
+          "src/main/java/cn/caijiajia/**/*.java",
+          "src/test/java/cn/caijiajia/**/*.java",
+          "**/*.js",
+          "**/*.ts",
+          "**/*.py"
+        ],
+        "contentPatterns": [
+          "@Transactional",
+          "synchronized",
+          "FOR UPDATE",
+          "findByIdForUpdate",
+          "DistributedLock",
+          "ThreadPoolTaskExecutor"
+        ]
+      },
+      "implicitDependencies": [
+        "cc-java-backend",
+        "cc-python",
+        "cc-frontend"
+      ]
+    },
+    "cc-design": {
+      "type": "workflow",
+      "tier": "core-workflow",
+      "description": "生成设计文档（PRD/技术方案/逆向文档），支持复杂度感知和分层设计。不写代码、不拆解任务。用于新功能设计、技术方案编写、已有代码文档化",
+      "promptTriggers": {
+        "keywords": [
+          "设计文档",
+          "design",
+          "PRD",
+          "技术方案",
+          "架构设计",
+          "逆向文档",
+          "reverse-engineer",
+          "技术设计",
+          "方案设计",
+          "文档化",
+          "design doc",
+          "technical design",
+          "重构方案",
+          "系统设计",
+          "重构设计",
+          "设计一个",
+          "写个方案",
+          "写个PRD",
+          "技术选型",
+          "逆向整理",
+          "方案说明",
+          "设计方案",
+          "出方案",
+          "设计评审"
+        ],
+        "intentPatterns": [
+          "(生成|写|创建|做).*?(设计|PRD|方案).*?(文档|文件)?",
+          "(逆向|反向|整理).*?(生成|分析|文档).*?(文档|PRD|代码)?",
+          ".*?(设计|架构).*?(评审|分析|文档)",
+          "(重构|改造).*?(方案|设计)",
+          "(帮我|请|给我).*?设计一个.*?(系统|功能|模块|服务|接口)",
+          "设计一个.*?(系统|功能|模块|服务|接口)",
+          "(写|做|出).*?(一个|个|份).*?方案",
+          "(技术|方案).*?选型",
+          "这个.*?(需求|任务).*?(技术|方案|选型).*?(写|做|出|说明)",
+          "写个方案.*?(说明|描述|讲).*?怎么.*?(实现|做)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "任务拆解",
+          "写代码",
+          "实现功能",
+          "开发功能",
+          "干活",
+          "审查代码"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          "**/PRD.md",
+          "**/DESIGN.md",
+          "**/design/*.md",
+          "**/docs/design/**/*.md"
+        ],
+        "contentPatterns": [
+          "## 需求",
+          "## 技术方案",
+          "## 架构设计"
+        ]
+      },
+      "implicitDependencies": [
+        "cc-java-backend",
+        "cc-python",
+        "cc-frontend"
+      ]
+    },
+    "cc-planner": {
+      "type": "workflow",
+      "tier": "core-workflow",
+      "description": "按RIPER五阶段拆解任务并生成可执行计划，支持设计评审门控、三层分解和迭代循环模式（Evaluator-Optimizer Loop）。不直接写代码。用于复杂任务拆解、多步骤开发规划、持续迭代优化",
+      "implicitDependencies": [
+        "cc-java-backend",
+        "cc-python",
+        "cc-frontend"
+      ],
+      "promptTriggers": {
+        "keywords": [
+          "计划",
+          "plan一下",
+          "任务拆解",
+          "工作计划",
+          "开发计划",
+          "实现方案",
+          "RIPER",
+          "阶段隔离",
+          "planning",
+          "task breakdown",
+          "继续上次",
+          "恢复会话",
+          "步骤拆解",
+          "怎么拆",
+          "拆解",
+          "拆分",
+          "拆成",
+          "breakdown",
+          "迭代优化",
+          "路线图",
+          "任务分解",
+          "持续改进",
+          "循环测试",
+          "实施路线",
+          "实现计划",
+          "先规划"
+        ],
+        "intentPatterns": [
+          "(计划|规划|拆解|拆分|拆成|梳理|分解).*?(任务|功能|开发|实现|需求|步骤|模块)",
+          "帮我.*?(规划|计划|拆分|拆解|拆成|梳理|理一下|理理).*?(任务|需求|功能|开发|实现|依赖|步骤|这个)",
+          "plan.*?(一下|this|这个).*?(feature|功能|需求|怎么做|怎么实现)",
+          "(研究|调研|分析).*?(一下|再|这个).*?(问题|需求|方案|实现).*?(再|然后|后).*?(出|做|给).*?(方案|计划|实现)",
+          ".*?(大型|复杂).*?(功能|模块|需求|任务).*?(开发|实现|怎么)",
+          ".*?(分析|调研|研究).*?(怎么做|实现路径|技术方案|再出方案)",
+          "(迭代|持续|循环).*?(优化|改进|测试|直到)",
+          ".*?需求.*?(很复杂|估计要改|改很多|要改\\d+个).*",
+          "帮我.*?(把|将).*?(大任务|这个).*?(拆|分)",
+          "(先|帮我).*?(梳理|理一下|理清).*?(依赖|关系|再动手)",
+          "怎么做.*?(功能|模块|需求|任务|接口)",
+          "帮我.*?(做|出).*?(实施|路线|计划|规划|任务)",
+          "(先.*?再|先梳理|先调研|先研究).*?(出|制定|做).*?(计划|方案|步骤)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "写代码",
+          "实现功能",
+          "审查代码",
+          "查数据库",
+          "画图",
+          "干活",
+          "ralph",
+          "干活模式",
+          "work-mode",
+          "work mode",
+          "按plan.md",
+          "按plan执行",
+          "按计划执行",
+          "按方案执行",
+          "按任务执行"
+        ]
+      },
+      "fileTriggers": {
+        "_note": "tasks.md 指用户项目中的任务清单文件，非 planner 内部的 tasks.yaml（已废弃）",
+        "pathPatterns": [
+          "**/PLAN.md",
+          "**/tasks.md",
+          "**/TODO.md"
+        ],
+        "contentPatterns": [
+          "## 任务",
+          "## Tasks",
+          "- [ ]"
+        ]
+      }
+    },
+    "cc-work-mode": {
+      "type": "workflow",
+      "tier": "core-workflow",
+      "description": "编排最多10个并发subagent执行批量开发任务（四阶段工作流：ANALYZE / PLAN / EXECUTE / SUMMARIZE）。不做单任务开发、不做需求分析。用于已明确的批量并行任务执行、任务数 ≥5 的批量场景",
+      "promptTriggers": {
+        "keywords": [
+          "干活",
+          "work-mode",
+          "work mode",
+          "并行执行",
+          "并行处理",
+          "并行做",
+          "并行跑",
+          "ultrapilot",
+          "ralph",
+          "批量任务",
+          "批量修改",
+          "批量开发",
+          "批量执行",
+          "干活模式",
+          "开干",
+          "parallel",
+          "并发执行",
+          "并发跑",
+          "subagent",
+          "多线程",
+          "同时处理",
+          "一起搞",
+          "按plan.md执行",
+          "按plan执行",
+          "按计划执行",
+          "按方案执行",
+          "按任务执行",
+          "按plan.md"
+        ],
+        "intentPatterns": [
+          "(干活|并行).*?(实现|开发|完成|处理|做|跑|修改)",
+          "ralph.*?(模式|帮我|做完)",
+          "帮我.*?批量.*?(实现|处理|修改|加|给)",
+          "批量.*?(实现|处理|修改|加|给|执行|开发|跑|做)",
+          "(开始|启动|开启).*?(执行|开发|并行|干活)",
+          "帮我.*?(把|将).*?任务.*?(跑|执行|完成|做)",
+          "(并发|一起|同时).*?(干|做|跑|搞|处理|执行)",
+          "\\d+个.*(文件|接口|service|Service|任务|controller|Controller).*?(改|做|加|实现|搞)",
+          "把.*?(planner|计划|任务).*?(全|都).*?(执行|做完|跑|完成)",
+          "这(些|批).*?(任务|改动|活).*?(并行|一起|同时|大)",
+          "按.*?(plan|计划|方案|任务).*?(\\.md)?.*?(执行|做|跑|完成)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "设计文档",
+          "PRD",
+          "审查代码",
+          "查数据库",
+          "画图",
+          "任务规划"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [],
+        "contentPatterns": [
+          "## 批量任务",
+          "parallel execution"
+        ]
+      },
+      "implicitDependencies": [
+        "cc-java-backend",
+        "cc-python",
+        "cc-frontend"
+      ]
+    },
+    "cc-tdd": {
+      "type": "workflow",
+      "tier": "core-workflow",
+      "description": "强制RED-GREEN-REFACTOR循环的TDD开发模式（仅Java后端），通过Hook提醒测试先行。不跳过测试直接写实现、不适用于Python/前端/脚本。用于关键业务逻辑开发、重构、Bug回归测试",
+      "promptTriggers": {
+        "keywords": [
+          "TDD",
+          "tdd",
+          "测试驱动",
+          "先写测试",
+          "test first",
+          "test driven",
+          "单测驱动",
+          "红绿重构",
+          "test-driven",
+          "RED-GREEN-REFACTOR",
+          "RED GREEN REFACTOR",
+          "写测试",
+          "补测试",
+          "TDD实现",
+          "TDD方式",
+          "TDD流程",
+          "测试先行",
+          "先写失败",
+          "先写失败的单测",
+          "用TDD",
+          "TDD这个",
+          "TDD修",
+          "帮我写单元测试"
+        ],
+        "intentPatterns": [
+          "(用|采用|按照).*?(TDD|测试驱动|先写测试).*?(实现|开发|写|修)",
+          "(TDD|测试驱动).*?(模式|方式|方法|流程|实现|开发)",
+          "先.*?测试.*?再.*?(实现|写|开发|改)",
+          "(补|加|写).*?测试.*?(再|然后).*?(重构|改|实现)",
+          "先写.*?(失败|失败的)?.*?(测试|单测).*?(再|然后).*?(改|实现|写|修)",
+          "测试先行.*?(修|实现|开发|写)",
+          "RED[\\s-]?GREEN[\\s-]?REFACTOR"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "审查代码",
+          "查数据库",
+          "画图",
+          "设计文档",
+          "测试网页",
+          "功能测试",
+          "跑一下单元测试",
+          "跑一下单测",
+          "跑单元测试",
+          "运行单元测试",
+          "执行单元测试"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          "src/test/java/**/*Test.java"
+        ],
+        "contentPatterns": [
+          "@ExtendWith(MockitoExtension.class)",
+          "BaseMock"
+        ]
+      },
+      "implicitDependencies": [
+        "cc-java-backend"
+      ]
+    },
+    "cc-code-writer": {
+      "type": "agent",
+      "tier": "core-workflow",
+      "description": "派发subagent编写代码并执行统一审查（P0-P1阻断+P2+建议）。不做任务规划、不做批量并行。用于功能开发、Bug修复、重构",
+      "promptTriggers": {
+        "keywords": [
+          "写代码",
+          "实现功能",
+          "编写代码",
+          "implement",
+          "帮我实现",
+          "帮我开发",
+          "帮我写",
+          "重写",
+          "修改",
+          "改代码",
+          "优化代码",
+          "重构",
+          "refactor",
+          "开发功能",
+          "编码实现",
+          "编码",
+          "develop",
+          "write code",
+          "修bug",
+          "修复bug",
+          "fix bug",
+          "添加功能",
+          "新增功能",
+          "加个功能",
+          "修一下",
+          "加一个方法",
+          "加一个字段",
+          "加个按钮",
+          "加个方法",
+          "NPE",
+          "NullPointerException"
+        ],
+        "intentPatterns": [
+          "(写|实现|开发|编写).*?(代码|功能|接口|方法)",
+          "帮我.*?(写|实现|开发|创建).*?(功能|接口|模块)",
+          "(重写|修改|改).*?(代码|方法|接口|功能)",
+          "(优化|改进).*?(代码|实现)",
+          "(修复|修|fix).*?(bug|Bug|BUG|缺陷|NPE|异常)",
+          "(实现|写|开发|做)一个.*?(接口|方法|类|功能|服务|Service|Controller|API)",
+          "(写|实现|开发|做)个.*?(service|Service|controller|Controller|repository|Repository|类|脚本|工具|函数|接口|方法|组件)",
+          "给.*?(加|增加|添加).*?(一个|个).*?(方法|字段|按钮|注解|功能|接口)",
+          "修.*?(这个|一下|下).*?(bug|NPE|异常|问题)",
+          "实现一个.*?(查询|更新|删除|创建|处理).*?(接口|方法|功能|服务|api|API)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "工作计划",
+          "开发计划",
+          "任务规划",
+          "干活模式",
+          "干活",
+          "ralph",
+          "审查代码",
+          "review代码",
+          "代码审查",
+          "work-mode",
+          "work mode",
+          "批量",
+          "并行",
+          "并发"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          "src/main/java/cn/caijiajia/**/*.java",
+          "src/test/java/cn/caijiajia/**/*.java"
+        ],
+        "contentPatterns": [
+          "@Service",
+          "@Controller",
+          "@Repository",
+          "public class"
+        ]
+      },
+      "implicitDependencies": [
+        "cc-java-backend",
+        "cc-python",
+        "cc-frontend"
+      ]
+    },
+    "cc-api-analyzer": {
+      "type": "analysis",
+      "tier": "analysis-tool",
+      "description": "追踪Java Controller/Service接口调用链并生成ER图和接口文档。不画Mermaid通用图表。用于接口文档化、数据流追踪、表关系梳理",
+      "promptTriggers": {
+        "keywords": [
+          "接口分析",
+          "分析接口",
+          "调用链追踪",
+          "调用链",
+          "表关系",
+          "数据库 ER 图",
+          "API 文档",
+          "方法调用链",
+          "数据流分析",
+          "analyze API",
+          "trace calls",
+          "generate ER diagram",
+          "项目梳理",
+          "onboarding",
+          "梳理表关系"
+        ],
+        "intentPatterns": [
+          "(分析|追踪|生成).*?(接口|调用链|ER 图)",
+          ".*?(接口|API).*?(分析|文档|追踪)",
+          "梳理.*?(表|接口|项目)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "画图",
+          "流程图",
+          "序列图",
+          "类图",
+          "状态图",
+          "甘特图",
+          "思维导图",
+          "饼图",
+          "时间线",
+          "mermaid"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          "src/main/java/cn/caijiajia/**/controller/**/*.java",
+          "**/api/**/*.java"
+        ],
+        "contentPatterns": [
+          "@RestController",
+          "@GetMapping",
+          "@PostMapping",
+          "@RequestMapping"
+        ]
+      },
+      "implicitDependencies": [
+        "cc-java-backend",
+        "cc-python",
+        "cc-frontend"
+      ]
+    },
+    "cc-diagram": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "生成Mermaid图表（流程图/序列图/ER图/类图等15种），内置防错规则和选型决策树。不分析接口调用链。用于可视化架构、流程、数据关系、统计分析",
+      "promptTriggers": {
+        "keywords": [
+          "画图",
+          "流程图",
+          "序列图",
+          "ER 图",
+          "类图",
+          "状态图",
+          "甘特图",
+          "思维导图",
+          "架构图",
+          "饼图",
+          "时间线",
+          "mermaid",
+          "diagram",
+          "flowchart",
+          "sequence diagram",
+          "C4图",
+          "容器图",
+          "C4",
+          "数据分布",
+          "分布图",
+          "趋势图",
+          "对比图",
+          "数据可视化",
+          "统计图",
+          "柱状图",
+          "桑基图",
+          "象限图",
+          "雷达图",
+          "架构拓扑图",
+          "xychart",
+          "sankey",
+          "radar"
+        ],
+        "intentPatterns": [
+          "(画|生成|创建).*?(图|diagram)",
+          "(流程|序列|类|状态|ER|甘特|架构|饼|时间线|C4).*?图",
+          ".*?mermaid.*",
+          "C4.*?(图|diagram)",
+          "(统计|数据|分布|趋势|占比|对比).*?(图|可视化|展示)",
+          "(分析|展示|汇总).*?(数据|指标|趋势|分布).*?(图|可视化)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "UI设计图",
+          "线框图",
+          "工程图纸",
+          "PPT",
+          "接口分析",
+          "分析接口",
+          "调用链追踪",
+          "调用链",
+          "表关系梳理"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          "**/*.mmd",
+          "**/*.mermaid"
+        ],
+        "contentPatterns": [
+          "flowchart",
+          "sequenceDiagram",
+          "classDiagram",
+          "erDiagram",
+          "stateDiagram",
+          "gantt"
+        ]
+      }
+    },
+    "cc-web-tester": {
+      "type": "workflow",
+      "tier": "analysis-tool",
+      "description": "通过Playwright MCP执行网页功能自动化测试，输出测试报告。不写后端代码、不做API测试。用于验收测试、回归测试、UI功能验证",
+      "promptTriggers": {
+        "keywords": [
+          "测试网页",
+          "网页测试",
+          "功能测试",
+          "自动化测试",
+          "测试页面",
+          "页面测试",
+          "UI测试",
+          "界面测试",
+          "web test",
+          "functional test",
+          "test website",
+          "探索页面",
+          "测试用例",
+          "模拟测试"
+        ],
+        "intentPatterns": [
+          "(测试|检测|验证).*?(网页|页面|网站|UI|界面|功能)",
+          "(网页|页面|网站).*?(测试|检测|验证|探索)",
+          "(生成|创建|设计).*?(测试用例|test case)",
+          "帮我.*?(测|验证|检查).*?(这个|那个).*?(页面|网页|网站)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "写代码",
+          "审查代码",
+          "查数据库",
+          "画图",
+          "设计文档"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [],
+        "contentPatterns": []
+      },
+      "implicitDependencies": []
+    },
+    "cc-sql": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "执行数据库只读查询（SELECT/SHOW/DESCRIBE），返回结构化结果。不修改数据、不分析调用链、不画ER图。用于查表结构、查数据、验证SQL",
+      "promptTriggers": {
+        "keywords": [
+          "查数据库",
+          "查表",
+          "查字段",
+          "查索引",
+          "SQL",
+          "sql",
+          "数据库查询",
+          "查数据",
+          "执行SQL",
+          "表结构",
+          "SELECT",
+          "SHOW",
+          "DESCRIBE",
+          "EXPLAIN",
+          "库列表",
+          "表列表",
+          "字段信息",
+          "SQL query",
+          "database query",
+          "慢查询",
+          "MySQL",
+          "mysql",
+          "索引优化"
+        ],
+        "intentPatterns": [
+          "(查|看|查询|执行).*?(数据库|表|字段|索引|SQL|数据)",
+          "(数据库|表|字段).*?(结构|列表|信息|查询)",
+          ".*?SQL.*?(查询|执行)",
+          "(帮我|请).*?(查|看|跑).*?(数据|表|SQL)",
+          "(慢查询|索引).*(优化|分析|问题)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "设计文档",
+          "ER图",
+          "画图",
+          "SLS",
+          "sls",
+          "线上日志",
+          "logstore"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [],
+        "contentPatterns": []
+      }
+    },
+    "cc-cfg": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "查询simbusiness配置中心的配置项值（prod环境只读）。不修改配置、不查数据库。用于查配置项值、排查配置问题、查看@ConfElement对应内容",
+      "promptTriggers": {
+        "keywords": [
+          "查配置",
+          "配置查询",
+          "配置中心",
+          "simbusiness",
+          "查看配置",
+          "配置值",
+          "config",
+          "配置key",
+          "cfg",
+          "ConfElement"
+        ],
+        "intentPatterns": [
+          "(查|看|查询).*?(配置|config)",
+          "(配置|config).*?(查|看|查询|值|内容)",
+          "(帮我|请).*?(查|看).*?(配置|config)",
+          "@ConfElement.*?name.*?=.*?"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "查数据库",
+          "SQL",
+          "表结构",
+          "查表",
+          "查字段",
+          "SLS",
+          "sls",
+          "线上日志",
+          "logstore"
+        ]
+      },
+      "fileTriggers": {
+        "_implementedBy": "claude-context",
+        "_note": "当 Claude 在读取/编辑文件时看到 @ConfElement 注解，应主动识别配置 key 并可用 cfg skill 查询其值",
+        "pathPatterns": [
+          "src/main/java/cn/caijiajia/**/*.java"
+        ],
+        "contentPatterns": [
+          "@ConfElement"
+        ]
+      }
+    },
+    "cc-idaas-token": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "获取指定用户的x-token（sit/prod环境），用于模拟身份调试API。不查数据、不改配置。用于以其他用户身份调试Moka网关后的API",
+      "promptTriggers": {
+        "keywords": [
+          "token",
+          "x-token",
+          "idaas",
+          "获取token",
+          "切换用户",
+          "模拟用户",
+          "用户身份",
+          "toggle",
+          "其他人的token",
+          "帮我拿token",
+          "以XX身份"
+        ],
+        "intentPatterns": [
+          "(获取|拿|切换|模拟).*?(token|用户|身份)",
+          "(token|x-token).*?(获取|切换|拿)",
+          "以.*?身份.*?(调|访问|请求)",
+          "idaas.*?(token|切换|toggle)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "查配置",
+          "SQL",
+          "表结构",
+          "查表",
+          "SLS",
+          "打tag"
+        ]
+      }
+    },
+    "cc-tag": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "创建feature tag并自动关联JIRA需求描述。不做代码审查、不部署。用于打tag、创建feature标签",
+      "promptTriggers": {
+        "keywords": [
+          "打tag",
+          "cc-tag",
+          "打标签",
+          "feature tag",
+          "featureTag",
+          "创建tag",
+          "发布tag"
+        ],
+        "intentPatterns": [
+          "(打|创建|发布).*?tag",
+          "tag.*?(打|创建|发布)",
+          "feature.*?tag"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "审查代码",
+          "查数据库",
+          "SQL",
+          "设计文档",
+          "排障",
+          "画图"
+        ]
+      }
+    },
+    "cc-troubleshoot": {
+      "type": "workflow",
+      "tier": "analysis-tool",
+      "description": "编排SLS日志/数据库/配置/代码多源排查并生成结构化诊断报告。不修复问题、不改代码。用于生产排障、问题定位、根因分析",
+      "promptTriggers": {
+        "keywords": [
+          "排障",
+          "排查",
+          "cc-troubleshoot",
+          "诊断",
+          "定位问题",
+          "根因分析",
+          "root cause",
+          "生产问题",
+          "线上问题",
+          "为什么失败",
+          "为什么报错",
+          "报错原因",
+          "排查问题",
+          "定位原因",
+          "故障排查",
+          "生产故障",
+          "线上故障",
+          "异常排查",
+          "调试"
+        ],
+        "intentPatterns": [
+          "(排查|排障|诊断|定位).*?(问题|故障|原因|根因|异常|错误)",
+          "(生产|线上|prod).*?(问题|故障|异常|报错|失败)",
+          "(为什么|什么原因).*?(失败|报错|异常|超时|不生效)",
+          "(帮我|请).*?(排查|诊断|定位|分析).*?(问题|原因|故障)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "只查日志",
+          "只查数据",
+          "只查配置",
+          "设计文档",
+          "写代码",
+          "代码审查",
+          "画图",
+          "打tag",
+          "干活"
+        ]
+      },
+      "implicitDependencies": [
+        "cc-java-backend",
+        "cc-python",
+        "cc-frontend"
+      ]
+    },
+    "cc-kb-sync": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "从当前会话提炼有价值发现并验证后写入Obsidian知识库对应位置。不做排障、不做代码修改。用于排障后沉淀、代码分析后归档、架构洞察同步知识库",
+      "promptTriggers": {
+        "keywords": [
+          "同步知识库",
+          "cc-kb-sync",
+          "沉淀到知识库",
+          "写入知识库",
+          "更新知识库",
+          "知识沉淀",
+          "归档发现",
+          "同步到vault",
+          "记录到知识库",
+          "同步发现",
+          "沉淀发现"
+        ],
+        "intentPatterns": [
+          "(同步|沉淀|写入|更新|归档|记录).*?(知识库|vault|KB|kb)",
+          "(知识库|vault).*?(同步|更新|写入|沉淀|归档)",
+          "(把|将).*?(发现|结论|分析|诊断).*?(写入|同步|沉淀|记录).*?(知识库|vault)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "排障",
+          "查日志",
+          "写代码",
+          "审查代码",
+          "画图",
+          "查数据库",
+          "查配置",
+          "干活",
+          "会话日志",
+          "session-log",
+          "工作日志",
+          "周报",
+          "月报",
+          "spark",
+          "知识发现"
+        ]
+      }
+    },
+    "cc-ob-session-log": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "将当前会话的工作摘要写入Obsidian daily note，记录行为而非提炼知识。不提取结论性知识、不修改基线文档。用于会话记录、工作模式分析、知识飞轮数据采集",
+      "promptTriggers": {
+        "keywords": [
+          "会话日志",
+          "session-log",
+          "/session-log",
+          "工作日志",
+          "记录会话",
+          "daily note",
+          "日志记录",
+          "今天做了什么",
+          "会话摘要",
+          "工作记录"
+        ],
+        "intentPatterns": [
+          "(记录|写入|保存).*?(今天|本次|当前).*?(工作|会话|做了)",
+          "(今天|本次|刚才).*?(工作|做了).*?(记录|保存|写)",
+          "写.*?daily.*?note"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "沉淀到知识库",
+          "同步知识库",
+          "kb-sync",
+          "写入基线",
+          "写入项目文档",
+          "周报",
+          "月报",
+          "spark",
+          "知识发现",
+          "知识聚类"
+        ]
+      }
+    },
+    "cc-ob-spark": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "扫描近期Obsidian笔记发现正在形成的知识簇和跨域隐藏关联。不写新笔记、不修改已有内容。用于知识发现、主题聚合、连接建议、灵感激发",
+      "promptTriggers": {
+        "keywords": [
+          "spark",
+          "/spark",
+          "知识发现",
+          "知识聚类",
+          "主题发现",
+          "知识簇",
+          "连接发现",
+          "主题聚合",
+          "隐藏关联",
+          "笔记聚类",
+          "发现主题"
+        ],
+        "intentPatterns": [
+          "(有什么|哪些).*?(关联|联系|主题|模式)",
+          "(发现|找).*?(主题|知识簇|关联|连接)",
+          "(知识图谱|笔记网络).*?(分析|发现|探索)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "沉淀到知识库",
+          "同步知识库",
+          "kb-sync",
+          "会话日志",
+          "session-log",
+          "周报",
+          "月报",
+          "写入基线",
+          "daily note"
+        ]
+      }
+    },
+    "cc-ob-aggregate": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "聚合Obsidian daily notes生成周报和月度综合报告（问题驱动，非机械汇总）。不写入项目知识库基线、不记录单次会话。用于知识沉淀循环、定期回顾、趋势分析",
+      "promptTriggers": {
+        "keywords": [
+          "周报",
+          "月报",
+          "weekly",
+          "monthly",
+          "/weekly",
+          "/monthly",
+          "聚合报告",
+          "定期回顾",
+          "周回顾",
+          "月回顾",
+          "月度总结",
+          "周度总结"
+        ],
+        "intentPatterns": [
+          "(总结|聚合).*?(这周|本周|上周|这月|本月|上月)",
+          "(生成|写).*?(周报|月报)",
+          "(本周|本月).*?(趋势|模式|回顾|总结)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "会话日志",
+          "session-log",
+          "spark",
+          "知识发现",
+          "沉淀到知识库",
+          "kb-sync",
+          "写入基线"
+        ]
+      }
+    },
+    "cc-ob-bases": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "创建和编辑Obsidian Bases(.base文件)的视图、过滤器、公式和汇总。不操作普通Markdown笔记、不处理frontmatter属性。用于结构化数据视图、Dataview替代、数据库式笔记查询",
+      "promptTriggers": {
+        "keywords": [
+          "bases",
+          "base文件",
+          ".base",
+          "obsidian bases",
+          "数据视图",
+          "表格视图",
+          "卡片视图",
+          "dataview替代",
+          "笔记数据库"
+        ],
+        "intentPatterns": [
+          "(创建|编辑|修改).*?(base|\\.base|数据视图)",
+          "obsidian.*?(bases|数据库视图|表格视图)",
+          "(动态|结构化).*?(视图|筛选|查询).*?(笔记|vault)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "普通笔记",
+          "markdown",
+          "frontmatter",
+          "wikilink",
+          "daily note",
+          "会话日志",
+          "周报",
+          "月报"
+        ]
+      }
+    },
+    "cc-sls-query": {
+      "type": "tool",
+      "tier": "analysis-tool",
+      "description": "查询阿里云SLS各环境日志（应用日志/k8s日志/k8s事件）。不做综合排障、不查数据库。用于生产日志排查、错误追踪、traceId检索",
+      "promptTriggers": {
+        "keywords": [
+          "SLS",
+          "sls",
+          "查线上日志",
+          "线上日志",
+          "查生产日志",
+          "阿里云日志",
+          "日志服务",
+          "logstore",
+          "logStore",
+          "applog",
+          "k8slog",
+          "k8sevent",
+          "应用日志",
+          "k8s日志",
+          "k8s事件",
+          "traceId",
+          "traceid",
+          "链路追踪",
+          "错误日志",
+          "ERROR日志"
+        ],
+        "intentPatterns": [
+          "(查|看|搜索).*?(线上|生产|SLS|阿里云|sit|pre|dev).*?(日志|log)",
+          "(生产|prod|sit|pre|dev).*?(日志|log|错误|error|warn)",
+          "traceId.*?(查|追踪|检索)",
+          "(帮我|请).*?(查|看).*?(线上|生产|SLS).*?(日志|log)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "查数据库",
+          "SQL",
+          "表结构",
+          "查表",
+          "查字段",
+          "查索引",
+          "配置查询",
+          "画图",
+          "设计文档",
+          "ARMS",
+          "链路分析",
+          "火焰图",
+          "日志规范",
+          "日志级别",
+          "加日志",
+          "添加日志",
+          "日志文件",
+          "日志脱敏",
+          "log.info",
+          "log.error",
+          "@Slf4j"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [],
+        "contentPatterns": []
+      }
+    },
+    "cc-skill-creator": {
+      "type": "meta-tool",
+      "tier": "meta-tool",
+      "description": "创建或更新Skill的元工具，提供设计原则、目录模板、一致性校验脚本。不执行其他Skill、不做业务开发。用于新建Skill、Skill结构重构、frontmatter规范检查",
+      "promptTriggers": {
+        "keywords": [
+          "创建skill",
+          "新建skill",
+          "create skill",
+          "skill创建",
+          "设计skill",
+          "skill模板",
+          "初始化skill",
+          "init skill",
+          "skill结构",
+          "skill设计",
+          "写skill",
+          "做个skill",
+          "更新skill",
+          "修改skill",
+          "重构skill"
+        ],
+        "intentPatterns": [
+          "(创建|新建|设计|写).*?(skill|Skill|SKILL)",
+          "做个.*?(skill|Skill|SKILL)",
+          "(skill|Skill).*?(创建|新建|设计|模板|结构|初始化)",
+          ".*?skill.*?(怎么写|怎么做|怎么创建|怎么设计)",
+          "(更新|修改|重构|升级).*?(skill|Skill)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "审查代码",
+          "写代码",
+          "查数据库",
+          "画图",
+          "干活",
+          "查配置",
+          "分析",
+          "评估",
+          "审计",
+          "检查",
+          "影响"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          ".claude/skills/*/SKILL.md"
+        ],
+        "contentPatterns": []
+      }
+    },
+    "cc-think-first": {
+      "type": "methodology",
+      "tier": "standalone",
+      "description": "在行动前执行三级预思考（L0跳过/L1快扫/L2深度分析），输出结构化思考结果。不执行任务本身。用于复杂决策、架构评估、模糊需求澄清",
+      "promptTriggers": {
+        "keywords": [
+          "先想想",
+          "先分析",
+          "think first",
+          "预分析",
+          "预思考",
+          "先评估",
+          "先判断",
+          "分析下再做",
+          "想清楚再做",
+          "深度分析",
+          "风险评估",
+          "权衡",
+          "trade-off",
+          "想一想",
+          "思考一下",
+          "思考下",
+          "L0分析",
+          "L1分析",
+          "L2分析",
+          "五问",
+          "五步分析",
+          "想清楚",
+          "约束扫描",
+          "反转检查"
+        ],
+        "intentPatterns": [
+          "(先|before).*(想|分析|评估|思考)",
+          "(分析|评估|思考).*(再|然后).*(做|实现|开发|定)",
+          "这个.*?(需要|得).*?(想想|思考|分析)",
+          "(帮我|请).*?(分析|评估|权衡).*?(风险|方案|trade-off)",
+          "(L[012]|五问|五步).*?(分析|扫描|评估|思考)",
+          "想清楚.*?(约束|方案|再|条件|边界)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "直接改",
+          "直接做",
+          "快速修",
+          "简单改下",
+          "查一下",
+          "定位下"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [],
+        "contentPatterns": []
+      },
+      "implicitDependencies": []
+    },
+    "cc-java-backend": {
+      "type": "domain",
+      "tier": "domain-standard",
+      "description": "提供数禾Java后端编码规范（Spring Boot+MyBatis+BaseRepository+Condition API+事务+分布式锁）。不独立执行开发任务。用于编码规范咨询、代码实现参考，作为底层规范支撑",
+      "promptTriggers": {
+        "keywords": [
+          "Java 规范",
+          "Java规范",
+          "Java",
+          "后端规范",
+          "最佳实践",
+          "如何写",
+          "代码规范咨询",
+          "Controller",
+          "Service",
+          "Repository",
+          "Mapper",
+          "MyBatis",
+          "mybatis",
+          "Spring",
+          "spring boot",
+          "@Transactional",
+          "@Async",
+          "@Service",
+          "@Repository",
+          "事务",
+          "Transactional",
+          "PageHelper",
+          "分布式锁",
+          "Condition",
+          "Hints",
+          "BaseRepository",
+          "BaseMapper",
+          "编码标准",
+          "命名规范",
+          "代码风格",
+          "BigDecimal",
+          "枚举规范",
+          "stream API",
+          "Stream API",
+          "lambda",
+          "Lambda"
+        ],
+        "intentPatterns": [
+          "(怎么|如何).*?(写|实现|处理|设计).*?(接口|方法|查询|功能)",
+          "(怎么|如何|什么是).*?(Controller|Service|Repository|Mapper|Spring|MyBatis)",
+          ".*?(规范|标准|约定).*?(是什么|怎么写|怎么用)",
+          "(Java|java).*?(List|Map|Set|Stream|stream|Lambda|lambda|Optional|泛型|注解).*?(用法|怎么|是什么|规范)",
+          "(MyBatis|mybatis).*?(批量|插入|映射|规范|用法|xml)",
+          "(Spring|spring).*?(@\\w+|注解|annotation|boot|bean|AOP)",
+          "(@Transactional|@Async|@Service|@Repository).*"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "任务规划",
+          "代码审查",
+          "review"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          "src/main/java/cn/caijiajia/**/controller/**/*.java",
+          "src/main/java/cn/caijiajia/**/services/**/*.java",
+          "src/main/java/cn/caijiajia/**/repository/**/*.java"
+        ],
+        "contentPatterns": [
+          "@Service",
+          "@Controller",
+          "@Repository",
+          "@Component",
+          "BaseRepository"
+        ]
+      },
+      "_note": "规范库，可由关键词直接触发，也可被其他 Skill 隐式依赖加载"
+    },
+    "cc-python": {
+      "type": "domain",
+      "tier": "domain-standard",
+      "description": "提供Python编码规范（FastAPI/Django+SQLAlchemy/ORM+async/await+类型系统+安全）。不独立执行开发任务。用于编码规范咨询、代码实现参考，作为底层规范支撑",
+      "promptTriggers": {
+        "keywords": [
+          "Python 规范",
+          "Python规范",
+          "python",
+          "Python",
+          "python 最佳实践",
+          "Python脚本",
+          "Python 脚本",
+          "FastAPI",
+          "Django",
+          "SQLAlchemy",
+          "Pydantic",
+          "pytest",
+          "async def",
+          "async/await",
+          "asyncio",
+          "uvicorn",
+          "Celery",
+          "Ruff",
+          "mypy",
+          "pyproject.toml",
+          "requirements.txt",
+          "pip install",
+          "venv",
+          "poetry",
+          "Flask"
+        ],
+        "intentPatterns": [
+          "(怎么|如何).*?(写|实现|处理|设计).*?(Python|FastAPI|Django|异步|async)",
+          "(怎么|如何|什么是).*?(FastAPI|Django|SQLAlchemy|Pydantic|pytest|Celery|Flask)",
+          ".*?Python.*?(规范|标准|约定|最佳实践|脚本|注意事项|异步|async|类型)",
+          "(SQLAlchemy|Django|FastAPI|Pydantic|pytest|asyncio)",
+          "(写|实现|做).*?(一个|个)?.*?Python.*?(脚本|函数|服务|接口)",
+          "async.*await.*?(注意|陷阱|规范|用法)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "任务规划",
+          "代码审查",
+          "review"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          "**/*.py",
+          "**/pyproject.toml",
+          "**/requirements*.txt"
+        ],
+        "contentPatterns": [
+          "from fastapi",
+          "from django",
+          "from sqlalchemy",
+          "import asyncio",
+          "from pydantic"
+        ]
+      },
+      "_note": "规范库，可由关键词直接触发，也可被其他 Skill 隐式依赖加载"
+    },
+    "cc-frontend": {
+      "type": "domain",
+      "tier": "domain-standard",
+      "description": "提供前端编码规范（React/Vue+TypeScript+Hooks+安全+性能+无障碍）。不独立执行开发任务。用于编码规范咨询、代码实现参考，作为底层规范支撑",
+      "promptTriggers": {
+        "keywords": [
+          "前端规范",
+          "前端",
+          "前端安全",
+          "React 规范",
+          "Vue 规范",
+          "TypeScript 规范",
+          "前端最佳实践",
+          "React",
+          "Vue",
+          "TypeScript",
+          "useEffect",
+          "useState",
+          "useMemo",
+          "useCallback",
+          "Composition API",
+          "reactive",
+          "Tailwind",
+          "Next.js",
+          "Nuxt",
+          "Vite",
+          "ESLint",
+          "tsx",
+          "jsx",
+          "组件设计",
+          "XSS",
+          "CSRF",
+          "dangerouslySetInnerHTML",
+          "innerHTML"
+        ],
+        "intentPatterns": [
+          "(怎么|如何).*?(写|实现|处理|设计).*?(React|Vue|前端|组件|Hook)",
+          "(怎么|如何|什么是).*?(useEffect|useState|reactive|ref|Composition API)",
+          ".*?(前端|React|Vue|TypeScript).*?(规范|标准|约定|最佳实践|安全|性能)",
+          "前端.*?(XSS|CSRF|安全|防御|加个|按钮|组件)",
+          "(XSS|CSRF|dangerouslySetInnerHTML|innerHTML).*?(安全|怎么|防|陷阱)",
+          "(React|Vue).*?(列表|list).*?key"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "任务规划",
+          "代码审查",
+          "review"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [
+          "**/*.tsx",
+          "**/*.vue",
+          "**/*.jsx",
+          "**/tsconfig*.json"
+        ],
+        "contentPatterns": [
+          "from 'react'",
+          "from 'vue'",
+          "import React",
+          "defineComponent",
+          "useEffect"
+        ]
+      },
+      "_note": "规范库，可由关键词直接触发，也可被其他 Skill 隐式依赖加载"
+    },
+    "cc-eval": {
+      "type": "meta-tool",
+      "tier": "meta-tool",
+      "description": "执行Skill自动化评估（三层检查+LLM评分+自动修复闭环）。不修改评分标准和测试用例。用于Skill质量验证、回归测试、自动迭代优化",
+      "promptTriggers": {
+        "keywords": [
+          "eval",
+          "评估",
+          "跑评估",
+          "检查skill质量",
+          "评估skill",
+          "skill质量",
+          "回归测试",
+          "自动迭代",
+          "质量验证",
+          "跑检查",
+          "run eval",
+          "skill eval",
+          "评估器"
+        ],
+        "intentPatterns": [
+          "(评估|检查|验证).*?(skill|Skill)",
+          "(跑|执行|运行).*?(评估|eval|检查)",
+          "(auto.?fix|自动修复|自动优化).*?(skill|Skill)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "创建skill",
+          "新建skill",
+          "审查代码"
+        ]
+      },
+      "implicitDependencies": []
+    },
+    "cc-adversarial": {
+      "type": "methodology",
+      "tier": "standalone",
+      "description": "对当前对话中的结论进行独立对抗验证，支持复杂度自适应（单challenger/三角辩论）。不修改代码、不产出设计。用于方案评审、分析结论验证、排障诊断复查",
+      "promptTriggers": {
+        "keywords": [
+          "对抗验证",
+          "cc-adversarial",
+          "验证结论",
+          "挑战结论",
+          "反驳",
+          "devil's advocate",
+          "质疑",
+          "challenge",
+          "验证一下",
+          "独立验证",
+          "独立复查",
+          "结论验证",
+          "批判性验证",
+          "反向验证",
+          "对抗",
+          "对抗检查",
+          "反例",
+          "举反例",
+          "红队",
+          "红队攻击",
+          "蓝队",
+          "站得住脚",
+          "有没有漏洞",
+          "漏洞",
+          "复查",
+          "方案评审",
+          "独立审视"
+        ],
+        "intentPatterns": [
+          "(验证|挑战|质疑|反驳|检验).*?(结论|分析|方案|诊断|判断)",
+          "(对抗|独立|批判).*?(验证|检查|审视|复查)",
+          "这个.*?(结论|分析|判断|方案).*?(对不对|靠谱|可靠|准确|站得住)",
+          "(帮我|请).*?(验证|挑战|质疑|检验|复查).*?(结论|方案|分析)",
+          "(找|举).*?(反例|漏洞|盲区)",
+          "(红队|蓝队).*(攻击|测试|验证|演练)",
+          ".*?站得住脚吗",
+          "方案.*?(有没有|是否有).*?(漏洞|缺陷|盲区)"
+        ]
+      },
+      "skipConditions": {
+        "keywords": [
+          "写代码",
+          "实现功能",
+          "代码审查",
+          "review代码",
+          "设计文档",
+          "画图",
+          "查数据"
+        ]
+      },
+      "fileTriggers": {
+        "pathPatterns": [],
+        "contentPatterns": []
+      },
+      "implicitDependencies": []
+    }
+  },
+  "combinationRules": {
+    "_description": "处理非显而易见的组合关键词场景（精简版：仅保留模型不易自主判断的 5 条核心规则）",
+    "_implementedBy": "claude-understanding",
+    "_implementationNote": "组合规则依赖 Claude 自身理解力执行，非 Hook 运行时强制。Claude 读取此配置后按 resolution 类型（clarify/auto/chain）自主决策。",
+    "rules": [
+      {
+        "id": "design-plan-combo",
+        "pattern": "(规划|计划).*(设计|方案|文档)|(设计|方案|文档).*(规划|计划)",
+        "resolution": "clarify",
+        "clarifyQuestion": "您是需要**设计文档**（PRD/技术方案），还是需要**任务规划**（可执行任务清单）？",
+        "options": [
+          {
+            "label": "设计文档",
+            "skill": "cc-design"
+          },
+          {
+            "label": "任务规划",
+            "skill": "cc-planner"
+          },
+          {
+            "label": "先设计后规划",
+            "sequence": [
+              "cc-design",
+              "cc-planner"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "design-implement-combo",
+        "pattern": "(设计|方案).*(实现|开发|编写)|(实现|开发).*(设计|方案)",
+        "resolution": "chain",
+        "chainSequence": [
+          "cc-design",
+          "cc-planner",
+          "cc-code-writer"
+        ],
+        "_reason": "完整开发流程：设计文档 -> 任务拆解 -> 代码实现",
+        "_note": "chain 链首已执行 cc-design 时，planner 应跳过内部 DESIGN/DESIGN-REVIEW 子阶段，避免重复设计"
+      },
+      {
+        "id": "code-review-combo",
+        "pattern": "(写代码|实现|开发).*(审查|review|检查)|(审查|review|检查).*(写代码|实现|开发)",
+        "resolution": "clarify",
+        "clarifyQuestion": "您是需要**编写代码**（含内置审查），还是需要**审查已有代码**？",
+        "options": [
+          {
+            "label": "编写代码",
+            "skill": "cc-code-writer"
+          },
+          {
+            "label": "审查代码",
+            "skill": "cc-code-reviewer"
+          },
+          {
+            "label": "先写后审",
+            "sequence": [
+              "cc-code-writer",
+              "cc-code-reviewer"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "tdd-code-combo",
+        "pattern": "(TDD|测试驱动|先写测试).*(写代码|实现|开发|帮我写|帮我实现)|(写代码|实现|开发|帮我写|帮我实现).*(TDD|测试驱动|先写测试)",
+        "resolution": "auto",
+        "autoSelect": [
+          "cc-tdd",
+          "cc-code-writer"
+        ],
+        "_reason": "TDD + 编码意图明确指向两者同时激活"
+      },
+      {
+        "id": "adversarial-review-combo",
+        "pattern": "(验证|质疑|挑战).*(审查|review)|(审查|review).*(验证|质疑|挑战)",
+        "resolution": "clarify",
+        "clarifyQuestion": "您是需要**对已有结论进行对抗验证**，还是需要**独立代码审查**？",
+        "options": [
+          {
+            "label": "对抗验证",
+            "skill": "cc-adversarial"
+          },
+          {
+            "label": "代码审查",
+            "skill": "cc-code-reviewer"
+          }
+        ]
+      },
+      {
+        "id": "ob-summary-time-combo",
+        "pattern": "(总结|汇总|聚合).*(这周|本周|上周|这月|本月|上月|最近几天)|(这周|本周|上周|这月|本月|上月).*(总结|回顾|汇总|聚合)",
+        "resolution": "auto",
+        "autoSelect": [
+          "cc-ob-aggregate"
+        ],
+        "_reason": "含时间范围的总结 → 周期性聚合（非单次会话）"
+      },
+      {
+        "id": "ob-summary-session-combo",
+        "pattern": "(总结|记录|保存).*(今天的工作|刚才|这次会话|本次会话|当前会话)|(今天|本次|刚才).*(会话|工作).*(总结|记录|保存)",
+        "resolution": "auto",
+        "autoSelect": [
+          "cc-ob-session-log"
+        ],
+        "_reason": "聚焦当前会话的总结 → 会话日志"
+      },
+      {
+        "id": "ob-review-knowledge-combo",
+        "pattern": "(复盘|回顾).*(知识|领域|主题|关联|笔记)|(知识|领域|主题).*(复盘|回顾|探索)",
+        "resolution": "clarify",
+        "clarifyQuestion": "您是需要**发现笔记间的隐藏关联**（主题聚类），还是需要**定期知识回顾**（周月报）？",
+        "options": [
+          {
+            "label": "发现隐藏关联",
+            "skill": "cc-ob-spark"
+          },
+          {
+            "label": "定期回顾",
+            "skill": "cc-ob-aggregate"
+          }
+        ]
+      },
+      {
+        "id": "ob-record-vs-sync-combo",
+        "pattern": "(记录|写入|保存).*(会话|工作).*(知识库|vault)|(知识库|vault).*(记录|保存).*(会话|工作)",
+        "resolution": "clarify",
+        "clarifyQuestion": "您是需要**记录会话元数据**（做了什么），还是需要**提炼会话知识**（发现了什么）？",
+        "options": [
+          {
+            "label": "记录行为",
+            "skill": "cc-ob-session-log"
+          },
+          {
+            "label": "提炼知识",
+            "skill": "cc-kb-sync"
+          }
+        ]
+      }
+    ]
+  },
+  "dataContracts": {
+    "_description": "Skill 间数据传递格式的唯一定义位置",
+    "_source": "shared-rules/data-contracts.md",
+    "registeredContracts": [
+      "planner → code-writer/work-mode",
+      "code-writer/work-mode → code-reviewer",
+      "code-reviewer → code-writer/work-mode",
+      "cc-api-analyzer → cc-diagram",
+      "design ↔ planner",
+      "design → cc-diagram",
+      "design → cc-api-analyzer",
+      "user → cc-sql",
+      "user → cc-cfg",
+      "user → cc-sls-query",
+      "user → cc-troubleshoot",
+      "cc-tdd ↔ code-writer/work-mode",
+      "user → cc-adversarial",
+      "cc-adversarial → adversarial-verification.md",
+      "cc-ob-session-log → vault/daily-notes/",
+      "cc-ob-spark → vault/spark-reports/",
+      "cc-ob-aggregate → vault/weekly-reviews/ | vault/monthly-reviews/",
+      "cc-ob-session-log → cc-ob-aggregate",
+      "vault/daily-notes → cc-ob-spark (optional)"
+    ]
+  },
+  "_forbiddenCombinations_implementedBy": "claude-understanding",
+  "_forbiddenCombinations_note": "禁止组合依赖 Claude 自身理解力执行，非 Hook 运行时强制。Claude 读取此配置后主动阻止禁止链路。",
+  "forbiddenCombinations": [
+    {
+      "id": "no-design-to-writer-direct",
+      "from": "cc-design",
+      "to": "cc-code-writer",
+      "reason": "设计文档必须先经 planner 拆解为任务",
+      "alternative": "cc-design → cc-planner → cc-code-writer"
+    },
+    {
+      "id": "no-workmode-nesting",
+      "from": "cc-work-mode",
+      "to": "cc-work-mode",
+      "reason": "嵌套并发导致资源竞争",
+      "alternative": "由 cc-planner 统一调度"
+    },
+    {
+      "id": "no-planner-unreviewed-to-execute",
+      "from": "cc-planner",
+      "to": "EXECUTE",
+      "condition": "plan 未经用户确认",
+      "reason": "计划必须经用户评审确认后才能进入执行阶段",
+      "alternative": "cc-planner.PLAN → 用户确认 → EXECUTE"
+    },
+    {
+      "id": "no-reviewer-to-writer-direct",
+      "from": "cc-code-reviewer",
+      "to": "cc-code-writer",
+      "reason": "审查结果应返回给原调用方处理，reviewer 不直接修改代码",
+      "alternative": "code-reviewer 返回审查结果 → 原调用方（code-writer/work-mode）修复"
+    },
+    {
+      "id": "no-codewriter-nesting",
+      "from": "cc-code-writer",
+      "to": "cc-code-writer",
+      "reason": "嵌套编写导致 subagent 递归",
+      "alternative": "由 cc-planner 统一调度"
+    },
+    {
+      "id": "no-planner-phase-parallel",
+      "from": "cc-planner",
+      "to": "cc-planner",
+      "condition": "RESEARCH/PLAN/EXECUTE 同时激活多个阶段",
+      "reason": "RIPER 阶段严格顺序执行，不可并行",
+      "alternative": "按 RESEARCH → INQUIRE → PLAN → EXECUTE → REVIEW 顺序逐阶段执行"
+    }
+  ]
+}

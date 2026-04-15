@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Claude Island 图标候选 v5 · 无脸抽象</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    background: #0f0f0f;
+    color: #eee;
+    font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
+    padding: 40px 60px;
+    margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
+    max-width: 1400px;
+  }
+  h1 { font-size: 24px; font-weight: 600; margin: 0 0 6px 0; letter-spacing: -0.01em; }
+  .intro { opacity: 0.6; font-size: 13px; margin: 0 0 24px 0; line-height: 1.7; }
+
+  .research {
+    background: linear-gradient(180deg, rgba(180,220,255,0.04), rgba(180,220,255,0.01));
+    border: 1px solid rgba(180,220,255,0.1);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin: 0 0 36px 0;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .research h3 {
+    margin: 0 0 12px 0;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0.85;
+    color: #a8c8ff;
+    letter-spacing: 0.02em;
+  }
+  .research b { color: #ffcb70; font-weight: 600; }
+  .research em { color: #a8c8ff; font-style: normal; font-weight: 600; }
+  .research .finding {
+    margin-bottom: 12px;
+    padding-left: 14px;
+    border-left: 2px solid rgba(168,200,255,0.3);
+  }
+  .research .src {
+    margin-top: 14px;
+    font-size: 11px;
+    opacity: 0.42;
+    line-height: 1.6;
+  }
+  .research .src a { color: #8cd9a5; text-decoration: none; }
+
+  .group-header {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 40px 0 16px 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .group-header .sub {
+    font-size: 12px;
+    font-weight: 400;
+    opacity: 0.5;
+    margin-left: 12px;
+  }
+
+  .option {
+    margin-bottom: 36px;
+    padding: 24px 28px;
+    background: #000;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .option h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 4px 0;
+  }
+  .option .tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 8px;
+    letter-spacing: 0.02em;
+    vertical-align: 2px;
+  }
+  .tag-term { background: rgba(140,217,165,0.18); color: #8cd9a5; }
+  .tag-semantic { background: rgba(255,200,120,0.18); color: #ffcb70; }
+  .tag-geo { background: rgba(180,220,255,0.18); color: #a8c8ff; }
+
+  .option .desc {
+    font-size: 12px;
+    opacity: 0.6;
+    margin: 0 0 14px 0;
+    line-height: 1.6;
+  }
+
+  .row-preview {
+    background: #000;
+    border-radius: 999px;
+    padding: 8px 20px;
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .row-preview .label {
+    font-size: 10px;
+    opacity: 0.5;
+    margin-right: 12px;
+    letter-spacing: 0.05em;
+  }
+
+  .states {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+  }
+  .state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 8px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 10px;
+  }
+  .state-label {
+    font-size: 10px;
+    opacity: 0.5;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .preview-row {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    justify-content: center;
+  }
+  .icon-16 { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+  .icon-80 { width: 80px; height: 80px; }
+  .zoom-label { font-size: 9px; opacity: 0.25; margin-top: 2px; }
+
+  .running   { color: #e69980; }
+  .attention { color: #8cd9a5; }
+  .compacting{ color: #d18cd1; }
+  .idle      { color: rgba(255,255,255,0.42); }
+
+  /* ---- Shared animations ---- */
+  @keyframes blink   { 0%,45%,100% { opacity: 1 } 50%,95% { opacity: 0.15 } }
+  @keyframes blinkFast { 0%,30%,60%,100% { opacity: 1 } 35%,65% { opacity: 0.1 } }
+  @keyframes pulseSoft { 0%,100% { opacity: 0.65 } 50% { opacity: 1 } }
+  @keyframes squeeze  { 0%,100% { transform: scaleY(1); } 50% { transform: scaleY(0.55); } }
+  @keyframes bounceY  { 0%,100% { transform: translateY(0); } 30% { transform: translateY(-14%); } 60% { transform: translateY(-3%); } }
+  @keyframes grow     { 0%,100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+  @keyframes spin     { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+  @keyframes spinFast { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+  /* Per-element animations */
+  @keyframes cursorThick { 0%,100% { transform: scaleX(1); } 50% { transform: scaleX(2.2); } }
+  @keyframes wave-a { 0%,100% { transform: scaleY(1); } 20% { transform: scaleY(1.9); } 40% { transform: scaleY(0.4); } 60% { transform: scaleY(1.3); } 80% { transform: scaleY(0.7); } }
+  @keyframes wave-b { 0%,100% { transform: scaleY(1); } 15% { transform: scaleY(0.5); } 40% { transform: scaleY(1.7); } 65% { transform: scaleY(0.6); } 85% { transform: scaleY(1.4); } }
+  @keyframes ripple { 0% { transform: scale(0.4); opacity: 0.8; } 80%,100% { transform: scale(1.6); opacity: 0; } }
+  @keyframes dotWalk { 0%,66%,100% { opacity: 0.3; transform: translateY(0); } 33% { opacity: 1; transform: translateY(-1px); } }
+  @keyframes zzz {
+    0%   { opacity: 0; transform: translate(0, 0) scale(0.7); }
+    20%  { opacity: 0.8; }
+    100% { opacity: 0; transform: translate(6px, -14px) scale(1); }
+  }
+
+  .zzz-wrap { position: relative; }
+  .zzz-particle {
+    position: absolute; top: -2px; right: -6px;
+    font-size: 8px; font-weight: 700;
+    color: rgba(255,255,255,0.55);
+    font-family: ui-monospace, Menlo, monospace;
+    animation: zzz 2.5s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .zzz-particle.big { font-size: 14px; top: -4px; right: -10px; }
+
+  .footer-note {
+    opacity: 0.45; font-size: 12px; text-align: center;
+    margin-top: 40px; line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<h1>🎨 Claude Island 图标候选 v5 · 无脸抽象派</h1>
+<p class="intro">
+  前四版全在"拟人化角色"赛道（猫/虫/食物/元素/像素宠/果冻），都被否了。彻底换赛道 —— 走 Apple Dynamic Island 自己的语言。
+</p>
+
+<div class="research">
+  <h3>📚 v5 关键发现</h3>
+  <div class="finding">
+    <b>Apple 的灵动岛从不用拟人角色</b>。所有内容都是抽象符号：音乐是<em>波形条</em>，地图是<em>路径</em>，计时器是<em>进度弧</em>，录音是<em>红点</em>。"stretches, squeezes, transforms" —— 设计语言建立在<em>形态变化</em>上，不是"角色演戏"。
+  </div>
+  <div class="finding">
+    <b>Linear / Arc / Raycast 这一代开发者工具</b>的 status indicator 全是几何图元或字符符号，没有一个带脸。这才是"开发者 SaaS"的审美共识。
+  </div>
+  <div class="finding">
+    <b>放弃脸 = 获得的空间</b>：语义更纯、尺寸更小、规模更可扩展（想想"满屏 20 只猫 vs 满屏 20 个波形"）。
+  </div>
+  <p class="src">
+    Sources:
+    <a href="https://medium.com/@shubhamdeepgupta/apples-dynamic-island-wave-a-small-detail-with-a-big-ux-design-lesson-665fefa13025">Dynamic Island Wave 分析</a> ·
+    <a href="https://developer.apple.com/documentation/WidgetKit/DynamicIsland">Apple HIG: Dynamic Island</a> ·
+    <a href="https://developers.raycast.com/api-reference/user-interface/icons-and-images">Raycast iconography</a>
+  </p>
+</div>
+
+<p class="intro">
+  v5 <b>三条赛道 × 每条 2 个候选 = 6 个</b>。你先挑<b>赛道</b>再挑具体选项。
+</p>
+
+<h3 class="group-header">
+  🖥️ 赛道 1 · 终端字符 <span class="sub">开发者母语，CLI 同源</span>
+</h3>
+<div id="term-options"></div>
+
+<h3 class="group-header">
+  💬 赛道 2 · 语义图形 <span class="sub">Apple Dynamic Island 路线</span>
+</h3>
+<div id="semantic-options"></div>
+
+<h3 class="group-header">
+  🔷 赛道 3 · 纯几何动态 <span class="sub">Linear / Raycast 现代 SaaS</span>
+</h3>
+<div id="geo-options"></div>
+
+<p class="footer-note">
+  看中<b>哪条赛道</b>（终端/语义/几何）先告诉我，我就在那条赛道深挖精修。<br>
+  如果还是都不对，我还能换赛道（例如：hand-drawn 手绘 / Y2K 赛博 / 极简禅意）。
+</p>
+
+<script>
+// ============ Per-option rendering functions ============
+
+const options = [
+  // ----- Lane 1: Terminal characters -----
+  {
+    key: 'A',
+    lane: 'term',
+    name: 'A · 光标 Cursor',
+    tag: '终端',
+    desc: '终端光标 `|`。最纯粹的开发者符号，闪烁就是"等输入 = 等用户"的天然语义。attention 时光标变粗脉动，idle 时变成下划线 `_`。',
+    render: (size, st) => {
+      const anim = {
+        attention: 'cursorThick 0.6s ease-in-out infinite',
+        compacting: 'squeeze 0.8s ease-in-out infinite',
+        running: 'blink 1.1s steps(2) infinite',
+        idle: 'pulseSoft 3s ease-in-out infinite'
+      }[st.key];
+      const shape = st.key === 'idle'
+        ? `<rect x="5" y="11" width="6" height="1.8" fill="currentColor"/>`
+        : `<rect x="7" y="3" width="2" height="10" fill="currentColor"/>`;
+      return `<svg viewBox="0 0 16 16" width="${size}" height="${size}" style="animation:${anim}; transform-origin:center;">${shape}</svg>`;
+    }
+  },
+  {
+    key: 'B',
+    lane: 'term',
+    name: 'B · 提示符 Prompt',
+    tag: '终端',
+    desc: '`>_` shell 提示符。比 A 更明确："这是个终端会话"。尖括号稳定，光标部分按状态动。',
+    render: (size, st) => {
+      const cursorAnim = {
+        attention: 'cursorThick 0.6s ease-in-out infinite',
+        compacting: 'squeeze 0.8s ease-in-out infinite',
+        running: 'blink 1.1s steps(2) infinite',
+        idle: 'pulseSoft 3s ease-in-out infinite'
+      }[st.key];
+      return `
+        <svg viewBox="0 0 16 16" width="${size}" height="${size}">
+          <polyline points="3,4 7,8 3,12" stroke="currentColor" stroke-width="1.8"
+                    fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="9" y="11" width="4" height="1.6" fill="currentColor"
+                style="animation:${cursorAnim}; transform-origin:center;"/>
+        </svg>`;
+    }
+  },
+
+  // ----- Lane 2: Semantic graphics -----
+  {
+    key: 'C',
+    lane: 'semantic',
+    name: 'C · 对话气泡 Bubble',
+    tag: '语义',
+    desc: '聊天气泡 + 里面三个点。"session 就是对话"的最直接翻译。三点轮流亮起 = 对话进行中。',
+    render: (size, st) => {
+      const bubbleAnim = {
+        attention: 'bounceY 0.8s cubic-bezier(.3,.8,.4,1) infinite',
+        compacting: 'squeeze 0.8s ease-in-out infinite',
+        running: 'none',
+        idle: 'pulseSoft 3s ease-in-out infinite'
+      }[st.key];
+      const dotAnim = st.key === 'running'
+        ? ['dotWalk 1.2s ease-in-out infinite 0s',
+           'dotWalk 1.2s ease-in-out infinite 0.2s',
+           'dotWalk 1.2s ease-in-out infinite 0.4s']
+        : ['none','none','none'];
+      const dotOpacity = st.key === 'idle' ? 0.3 : 0.7;
+      return `
+        <svg viewBox="0 0 16 16" width="${size}" height="${size}" style="animation:${bubbleAnim}; transform-origin:center;">
+          <path d="M 2.5 3 H 13.5 Q 14.5 3 14.5 4 V 9 Q 14.5 10 13.5 10 H 7 L 4 13 L 5 10 H 2.5 Q 1.5 10 1.5 9 V 4 Q 1.5 3 2.5 3 Z"
+                fill="currentColor"/>
+          <circle cx="5.5" cy="6.5" r="0.9" fill="rgba(0,0,0,0.55)"
+                  opacity="${dotOpacity}" style="animation:${dotAnim[0]};"/>
+          <circle cx="8" cy="6.5" r="0.9" fill="rgba(0,0,0,0.55)"
+                  opacity="${dotOpacity}" style="animation:${dotAnim[1]};"/>
+          <circle cx="10.5" cy="6.5" r="0.9" fill="rgba(0,0,0,0.55)"
+                  opacity="${dotOpacity}" style="animation:${dotAnim[2]};"/>
+        </svg>`;
+    }
+  },
+  {
+    key: 'D',
+    lane: 'semantic',
+    name: 'D · 波形 Waveform',
+    tag: '语义',
+    desc: '5 根立柱波形条。直接抄 Apple Dynamic Island 音乐指示器的语言 —— 把"Claude 在思考"当作一种节律来表达。',
+    render: (size, st) => {
+      const bars = [
+        { x: 2.5, h: 3 },
+        { x: 5,   h: 6 },
+        { x: 7.5, h: 10 },
+        { x: 10,  h: 6 },
+        { x: 12.5, h: 3 }
+      ];
+      const animFor = (i) => {
+        if (st.key === 'running')    return `wave-${i%2===0?'a':'b'} 1.2s ease-in-out infinite ${i*0.1}s`;
+        if (st.key === 'attention')  return `wave-a 0.55s ease-in-out infinite ${i*0.06}s`;
+        if (st.key === 'compacting') return `squeeze 0.8s ease-in-out infinite`;
+        return 'pulseSoft 3s ease-in-out infinite';
+      };
+      return `
+        <svg viewBox="0 0 16 16" width="${size}" height="${size}">
+          ${bars.map((b, i) => `
+            <rect x="${b.x}" y="${8 - b.h/2}" width="1.2" height="${b.h}" rx="0.6" fill="currentColor"
+                  style="animation:${animFor(i)}; transform-origin:${b.x + 0.6}px 8px;"/>
+          `).join('')}
+        </svg>`;
+    }
+  },
+
+  // ----- Lane 3: Pure geometric -----
+  {
+    key: 'E',
+    lane: 'geo',
+    name: 'E · 同心波纹 Ripple',
+    tag: '几何',
+    desc: '中心点 + 一圈外扩的涟漪（Raycast / Linear 最常用的 status 语言）。running 时波纹慢慢扩，attention 时波纹密集爆发。',
+    render: (size, st) => {
+      const rippleSpeed = {
+        attention: '0.6s',
+        compacting: '0.8s',
+        running: '1.8s',
+        idle: '0s'
+      }[st.key];
+      const centerAnim = {
+        attention: 'grow 0.6s ease-in-out infinite',
+        compacting: 'squeeze 0.8s ease-in-out infinite',
+        running: 'pulseSoft 1.8s ease-in-out infinite',
+        idle: 'pulseSoft 3s ease-in-out infinite'
+      }[st.key];
+      const rippleCount = st.key === 'attention' ? 2 : (st.key === 'idle' ? 0 : 1);
+      const ripples = Array.from({length: rippleCount}).map((_, i) => `
+        <circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="0.9" fill="none"
+                style="animation: ripple ${rippleSpeed} ease-out infinite; animation-delay: ${i * 0.4}s; transform-origin: center;"/>
+      `).join('');
+      return `
+        <svg viewBox="0 0 16 16" width="${size}" height="${size}">
+          ${ripples}
+          <circle cx="8" cy="8" r="2" fill="currentColor"
+                  style="animation:${centerAnim}; transform-origin: center;"/>
+        </svg>`;
+    }
+  },
+  {
+    key: 'F',
+    lane: 'geo',
+    name: 'F · 闪光 Sparkle',
+    tag: '几何',
+    desc: 'Anthropic 官方 logo 就是一颗闪光 ✦。直接呼应品牌。attention 时快速旋转+放大，idle 时暗淡缓转。',
+    render: (size, st) => {
+      const anim = {
+        attention: 'spinFast 1.2s linear infinite, grow 0.6s ease-in-out infinite',
+        compacting: 'squeeze 0.8s ease-in-out infinite',
+        running: 'spin 6s linear infinite',
+        idle: 'pulseSoft 3s ease-in-out infinite'
+      }[st.key];
+      return `
+        <svg viewBox="0 0 16 16" width="${size}" height="${size}"
+             style="animation:${anim}; transform-origin: center; transform-box: fill-box;">
+          <path d="M 8 1.5 Q 8 6 9 7 Q 14.5 8 9 9 Q 8 10 8 14.5 Q 8 10 7 9 Q 1.5 8 7 7 Q 8 6 8 1.5 Z"
+                fill="currentColor"/>
+        </svg>`;
+    }
+  }
+];
+
+const states = [
+  { key: 'attention',  label: '关注',  cls: 'attention',  zzz: false },
+  { key: 'compacting', label: '压缩',  cls: 'compacting', zzz: false },
+  { key: 'running',    label: '运行',  cls: 'running',    zzz: false },
+  { key: 'idle',       label: '闲置',  cls: 'idle',       zzz: true  }
+];
+
+function renderState(opt, st) {
+  const zzz16 = st.zzz ? `<span class="zzz-particle">z</span>` : '';
+  const zzz80 = st.zzz ? `<span class="zzz-particle big">z</span>` : '';
+  return `
+    <div class="state ${st.cls}">
+      <span class="state-label">${st.label}</span>
+      <div class="preview-row">
+        <div class="zzz-wrap">
+          <div class="icon-16">${opt.render(16, st)}</div>
+          ${zzz16}
+        </div>
+        <div class="zzz-wrap">
+          <div class="icon-80">${opt.render(80, st)}</div>
+          ${zzz80}
+        </div>
+      </div>
+      <span class="zoom-label">16px · 80px</span>
+    </div>`;
+}
+
+function renderRow(opt) {
+  return `
+    <div class="row-preview">
+      <span class="label">notch 实拍 →</span>
+      ${states.map(st => {
+        const zzz = st.zzz ? `<span class="zzz-particle">z</span>` : '';
+        return `<div class="zzz-wrap ${st.cls}"><div class="icon-16">${opt.render(16, st)}</div>${zzz}</div>`;
+      }).join('')}
+    </div>`;
+}
+
+function renderSection(opt) {
+  const tagClass = { term: 'tag-term', semantic: 'tag-semantic', geo: 'tag-geo' }[opt.lane];
+  return `
+    <section class="option">
+      <h2>${opt.name}<span class="tag ${tagClass}">${opt.tag}</span></h2>
+      <p class="desc">${opt.desc}</p>
+      ${renderRow(opt)}
+      <div class="states">
+        ${states.map(st => renderState(opt, st)).join('')}
+      </div>
+    </section>`;
+}
+
+function renderLane(laneKey, containerId) {
+  const laneOpts = options.filter(o => o.lane === laneKey);
+  document.getElementById(containerId).innerHTML = laneOpts.map(renderSection).join('');
+}
+
+renderLane('term', 'term-options');
+renderLane('semantic', 'semantic-options');
+renderLane('geo', 'geo-options');
+</script>
+
+</body>
+</html>

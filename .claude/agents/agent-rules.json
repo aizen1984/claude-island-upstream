@@ -1,0 +1,102 @@
+{
+  "description": "Agent 规则 - Skills 内部 subagent 配置",
+  "activationMode": "skills-first",
+  "note": "所有 Agent 均为 Skills 内部 subagent，通过 Task 工具派发",
+  "agents": {
+    "cc-researcher": {
+      "type": "subagent",
+      "description": "快速代码研究专家 - work-mode ANALYZE 阶段",
+      "dispatchedBy": ["cc-work-mode"],
+      "skills": [],
+      "capabilities": [
+        "快速代码搜索",
+        "模式识别",
+        "依赖分析",
+        "上下文收集",
+        "影响范围评估",
+        "执行建议"
+      ]
+    },
+    "cc-executor": {
+      "type": "subagent",
+      "description": "代码执行专家 - work-mode EXECUTE 阶段主力",
+      "dispatchedBy": ["cc-work-mode"],
+      "skills": ["cc-java-backend"],
+      "capabilities": [
+        "遵循数禾 Java 后端开发规范",
+        "执行单个原子任务",
+        "返回执行结果或错误描述"
+      ]
+    },
+    "cc-reviewer": {
+      "type": "subagent",
+      "description": "深度代码审查专家 - work-mode SUMMARIZE 阶段",
+      "dispatchedBy": ["cc-work-mode"],
+      "skills": ["cc-code-reviewer"],
+      "capabilities": [
+        "九维度代码审查（安全P0/数据完整性P0/业务行为P0.5/流程顺序P0.5/架构P1/单元测试P2/性能P3/模式识别P4/代码简化P5）",
+        "生成审查报告"
+      ]
+    },
+    "cc-cw-implementer": {
+      "type": "subagent",
+      "description": "代码实现者 - code-writer 的编码执行子 agent",
+      "dispatchedBy": ["cc-code-writer"],
+      "skills": ["cc-java-backend"],
+      "capabilities": [
+        "RED-GREEN-REFACTOR 工作流",
+        "上下文合约验证",
+        "自我审查",
+        "Git 提交"
+      ]
+    },
+    "cc-cw-unified-reviewer": {
+      "type": "subagent",
+      "description": "统一审查者 - code-writer P0-P5 全维度审查",
+      "dispatchedBy": ["cc-code-writer"],
+      "skills": ["cc-code-reviewer"],
+      "capabilities": [
+        "P0-P5 全维度统一审查",
+        "置信度分级",
+        "反向验证",
+        "需求对照",
+        "质量评分"
+      ]
+    },
+    "api-scanner": {
+      "type": "subagent",
+      "description": "接口扫描器 - cc-api-analyzer Phase 1",
+      "dispatchedBy": ["cc-api-analyzer"],
+      "skills": [],
+      "capabilities": [
+        "Controller 扫描",
+        "API 注解提取",
+        "接口清单生成"
+      ]
+    },
+    "api-deep-analyzer": {
+      "type": "subagent",
+      "description": "接口深度分析器 - cc-api-analyzer Phase 2",
+      "dispatchedBy": ["cc-api-analyzer"],
+      "skills": [],
+      "capabilities": [
+        "调用链追踪（最多5层）",
+        "Lambda/Stream 调用追踪",
+        "表信息提取",
+        "JPA 关系注解识别",
+        "MyBatis XML 解析"
+      ]
+    },
+    "api-aggregator": {
+      "type": "subagent",
+      "description": "数据汇总器 - cc-api-analyzer Phase 3",
+      "dispatchedBy": ["cc-api-analyzer"],
+      "skills": ["cc-diagram"],
+      "capabilities": [
+        "表关系推断",
+        "ER 图生成（Mermaid）",
+        "API 汇总统计"
+      ]
+    }
+  }
+}

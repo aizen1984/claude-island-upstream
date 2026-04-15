@@ -1,0 +1,31 @@
+default_env: prod
+
+environments:
+  prod:
+    type: firekylin
+    firekylin_url: "http://moka.dmz.prod.caijj.net"
+    token_file: "/Users/caochen/x-token/moka-prod-x-token.json"
+    instance_name: "dscommerce"
+    schema_name: "vipship"
+  sit:
+    type: mysql
+    host: "cjjloan.db.ali-bj-sit01.shuheo.net"
+    port: 3306
+    user: "test"
+    password: "test"
+    schema_name: "vipship"
+
+safety:
+  max_rows: 1000
+  allow_select_star: false
+  allowed_statements: [SELECT, SHOW, DESCRIBE, DESC, EXPLAIN]
+
+output:
+  format: "json"
+  max_column_width: 50
+  json_indent: 2
+
+cache:
+  enabled: true
+  dir: "~/.cache/claude-sql"
+  ttl: 86400

@@ -1,0 +1,13 @@
+default_env: sit
+
+environments:
+  sit:
+    base_url: "http://moka.dmz.sit.caijj.net"
+    token_file: "/Users/caochen/x-token/moka-sit-x-token.json"
+    tenant_id: "2be7b370-0dc6-4c9a-b6da-a82665dc774a"
+  prod:
+    base_url: "http://moka.dmz.prod.caijj.net"
+    token_file: "/Users/caochen/x-token/moka-prod-x-token.json"
+    tenant_id: "2be7b370-0dc6-4c9a-b6da-a82665dc774a"
+
+timeout: 15

@@ -1,0 +1,449 @@
+# 数据报告防失真协议 (data-report-protocol)
+
+> **目的**：防止 agent 动态生成数据报告时的 under-reporting（漏报）、fabrication（瞎编）、aggregation drift（缝合丢失）
+>
+> **适用**：frontmatter 声明 `report_generation: true` 的所有 skill
+>
+> **与 check_consistency.py 的关系**：check_consistency.py 是**静态 lint**（拦截文档漂移），本协议是**运行时契约**（拦截报告生成时的失真）。两者互补，不重叠。
+>
+> **理论依据**：
+> - Anthropic 官方 [minimizing-hallucinations](https://platform.claude.com/docs/en/docs/minimizing-hallucinations)（quote grounding + citation verification）
+> - LLM×MapReduce 论文（structured information protocol + in-context confidence calibration）
+> - HumanLayer harness engineering（back-pressure verification loop）
+> - Iter 3 真实教训（9 处命中被漏报 33%，根因是 AP3+AP4 同时发作）
+
+## 零、意图
+
+数据报告型 skill 的核心工作模式是 Map-Reduce：多个 subagent 并行扫描不同输入源（Map），主 agent 或脚本汇总为最终报告（Reduce）。这个模式有三个固有失真点：
+
+1. **Map 阶段瞎编**：subagent 在没有证据时生成"看起来合理"的 finding（AP3 fabrication）
+2. **Map 阶段漏报**：subagent 以为扫描完了但实际只覆盖部分（AP4 silent under-reporting）
+3. **Reduce 阶段缝合丢失**：LLM 汇总时 context rot 导致 27 个结果变成 15 个
+
+本协议针对这三点分别给出 **Quote Grounding / Constrained Output Contract / Deterministic Reduce** 三条防线。
+
+## 一、适用范围 + opt-out
+
+**必须遵守**（`report_generation: true` 且生成结构化报告）：
+- cc-adversarial / cc-code-reviewer / cc-troubleshoot / cc-api-analyzer / cc-work-mode（SUMMARIZE 阶段）
+
+**推荐遵守**（生成混合结构/散文报告）：
+- cc-design（逆向路径）/ cc-web-tester / cc-eval
+
+**允许 opt-out**（以下场景可以仅遵守防线 1 不遵守 2-3）：
+- 简单评分报告（单一数值输出，无 findings 列表）
+- 纯散文分析（无需聚合的叙述性输出）
+
+opt-out 时在 frontmatter 显式声明：`report_protocol_mode: grounding-only`
+
+## 二、Quote Grounding 强制引用协议（防 AP3 fabrication）
+
+### 2.1 核心规则
+
+**每条 finding/claim 必须附带原文 word-for-word 引用。没有引用的 claim 必须删除并显式标记删除位置**。
+
+### 2.2 标签语法
+
+subagent 在生成报告时必须使用如下标签结构：
+
+```xml
+<quote file="path/to/file.md" line="42">原文字符逐字</quote>
+```
+
+字段要求：
+- `file` 必须是相对路径或绝对路径，调用方 CWD 可定位的实际文件
+- `line` 必须是整数行号（多行引用用 `line="42-48"`）
+- 标签内容必须是**原文字符逐字**，不允许改写、截断、省略号
+
+### 2.3 no-match 声明（反 silent failure）
+
+如果某项规则零命中，**必须显式声明**，不允许省略：
+
+```xml
+<no-match pattern="disable-model-invocation" scope="cc-skill-creator/SKILL.md" reason="frontmatter 不含此字段"/>
+```
+
+这让"扫过了但没命中"和"忘了扫"变得**可区分**，是防 AP4 同构盲区的关键机制。
+
+### 2.4 [REMOVED:no-quote] 删除标记
+
+Agent 自审阶段必须扫描自己生成的报告，对**无 quote 支持的 claim** 执行：
+
+```markdown
+## P0 Findings
+
+- ✅ finding 1: 配置缺失 <quote file="SKILL.md" line="12">allowed-tools:</quote>
+- ✅ finding 2: 引用断链 <quote file="workflows.md" line="88">第六章 xxx</quote>
+- [REMOVED:no-quote] 原本想报"存在性能问题"但找不到原文支持，删除。
+```
+
+**为什么保留删除标记而不是静默删除**：让用户看见"哪里本来想说但没证据" = 把 silent failure 变成 explicit gap。这是 Anthropic 官方 [minimizing-hallucinations](https://platform.claude.com/docs/en/docs/minimizing-hallucinations) 例子中 `[ ]` 空括号的变体实现。
+
+## 三、Constrained Output Contract（防 AP4 silent under-reporting）
+
+### 3.1 JSON Schema 模板（subagent 输出契约）
+
+subagent 必须输出且仅输出如下结构的 JSON，不允许自由文本：
+
+```json
+{
+  "skill_name": "cc-xxx",
+  "agent_role": "reviewer|scanner|analyzer",
+  "scanned_files": ["SKILL.md", "scripts/foo.py"],
+  "scanned_patterns": [
+    {"pattern": "\\d+步", "hits": 2, "scope": "SKILL.md"},
+    {"pattern": "disable-model-invocation", "hits": 0, "scope": "frontmatter"}
+  ],
+  "findings": [
+    {
+      "severity": "P0|P1|P2",
+      "file": "SKILL.md",
+      "line": 42,
+      "quote": "按6步流程执行",
+      "rule_violated": "CSO-no-step-count",
+      "suggested_fix": "按流程执行"
+    }
+  ],
+  "scan_complete": true,
+  "unscanned_reason": null,
+  "self_audit_passed": true
+}
+```
+
+### 3.2 关键字段说明
+
+| 字段 | 作用 | 反什么反模式 |
+|------|------|------------|
+| `scanned_patterns[].hits: 0` | 强制列出零命中，证明"扫过了" | AP4 silent failure |
+| `scanned_patterns[].scope` | 限定扫描范围，避免"全局扫了"的模糊声明 | AP3 虚假完备 |
+| `findings[].quote` | 每条 finding 的 ground truth | AP3 fabrication |
+| `scan_complete: false` + `unscanned_reason` | 允许 agent 说"我没扫完"而不是假装扫完 | AP3 "I don't know" 授权 |
+| `self_audit_passed: true` | subagent 必须在输出前自审引用完整性 | 双重验证 |
+
+### 3.3 scan_complete 自证机制
+
+灵感来自 Anthropic 的"Allow Claude to say 'I don't know'"原则。如果 subagent 遇到：
+- 输入文件过大无法完整读取
+- 某个模式语义复杂无法判断
+- 权限不足访问某目录
+
+**必须**输出 `scan_complete: false` + 详细 `unscanned_reason`。主 agent / Reduce 脚本会把这些条目单独标记，**不计入"完成扫描"**。
+
+## 四、Deterministic Reduce 指南（防 aggregation drift）
+
+### 4.1 铁律：不用 LLM 缝合多个 Map 结果
+
+27 个 subagent 输出的 JSON 结果**必须由 Python 脚本汇总**，不允许 LLM 在 context 里"阅读所有报告然后总结"。LLM 缝合的失败模式是 context rot —— 27 个变成 15 个，且丢失的那 12 个不可追溯。
+
+### 4.2 Python 聚合骨架（copy-paste 模板）
+
+每个报告型 skill 应在 `{skill}/scripts/aggregate_findings.py` 提供如下结构：
+
+```python
+# aggregate_findings.py
+"""
+Deterministic reduce for map-reduce style report generation.
+Reads all subagent JSON outputs → merges → detects coverage gaps.
+"""
+import json, glob, sys
+from collections import defaultdict
+from pathlib import Path
+
+def aggregate(json_dir: Path) -> dict:
+    findings_by_skill = defaultdict(list)
+    unscanned_alerts = []
+    pattern_coverage = defaultdict(set)
+    dropped_no_quote = []
+
+    for f in glob.glob(str(json_dir / "*.json")):
+        data = json.loads(Path(f).read_text())
+        skill = data["skill_name"]
+
+        # Red line 1: scan_complete=false 顶层告警
+        if not data.get("scan_complete", True):
+            unscanned_alerts.append({
+                "skill": skill,
+                "reason": data.get("unscanned_reason", "unknown"),
+                "source": f
+            })
+
+        # Red line 2: 无 quote 的 finding 必须丢弃并记日志
+        for finding in data.get("findings", []):
+            if not finding.get("quote"):
+                dropped_no_quote.append({
+                    "skill": skill,
+                    "finding": finding,
+                    "reason": "no-quote-support"
+                })
+                continue
+            findings_by_skill[skill].append(finding)
+
+        # Red line 3: 记录每个正则被哪些 skill 扫过（AP4 盲区检测）
+        for p in data.get("scanned_patterns", []):
+            pattern_coverage[p["pattern"]].add(skill)
+
+    # Red line 4: 覆盖率不足的正则标记为"coverage gap"
+    total_skills = len(findings_by_skill)
+    coverage_gaps = [
+        {"pattern": p, "covered_skills": len(skills), "total": total_skills}
+        for p, skills in pattern_coverage.items()
+        if total_skills > 0 and len(skills) < total_skills * 0.5
+    ]
+
+    return {
+        "findings_by_skill": dict(findings_by_skill),
+        "unscanned_alerts": unscanned_alerts,
+        "dropped_no_quote": dropped_no_quote,
+        "coverage_gaps": coverage_gaps,
+        "total_skills_scanned": total_skills,
+    }
+
+if __name__ == "__main__":
+    result = aggregate(Path(sys.argv[1]))
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    # 非 0 退出如有警告
+    if result["unscanned_alerts"] or result["dropped_no_quote"]:
+        sys.exit(2)
+```
+
+### 4.3 四条红线的作用对照
+
+| 红线 | 防什么 | Iter 3 复盘 |
+|------|-------|------------|
+| 1. scan_complete 告警 | 隐藏的"没扫完" | - |
+| 2. 无 quote 丢弃 | AP3 瞎编 | 如果当时有，27 个 agent 的假 finding 会被 drop |
+| 3. 正则覆盖率记录 | AP4 同构盲区 | 如果当时有，"adversarial-verification.md 只在 5 skill 扫过"会显式暴露 |
+| 4. coverage gap 告警 | 部分 agent 没扫 | 如果当时有，会立即要求补扫 |
+
+## 五、Back-Pressure Verify Loop（两层防线）
+
+### 5.1 静态 lint 层（已由 check_consistency.py 实现 — Iter 9/17）
+
+10 条规则覆盖"修复成果的 regression 拦截"。与本协议**互补**：lint 确保修复不复发，本协议确保新报告不失真。
+
+### 5.2 运行时层（Iter 23 将实现 `verify_report_runtime.py`）
+
+独立脚本，作为 PostToolUse hook 或 handoff-style 独立工具：
+
+- `verify_no_fabrication(report_path)`: 对每个 `<quote>` 执行反向 grep，原文不存在 → exit 2
+- `verify_no_underreport(report_path, patterns)`: 对每个 pattern 在活文档上 grep，对比报告 scanned_patterns 字段，漏报 → exit 2
+
+**exit 2 的语义**：HumanLayer harness engineering 的标准约定——Claude Code hook exit 2 会把 stderr 注入到 agent 下一轮 context，触发自动修复。`exit 1` 只是普通失败，agent 看不见错误内容。
+
+## 六、skill 引用方式（执行层落地）
+
+### 6.1 frontmatter 声明
+
+```yaml
+---
+name: cc-code-reviewer
+description: ...
+report_generation: true
+report_protocol: data-report-protocol   # 可选，默认值
+report_protocol_mode: full              # full | grounding-only
+allowed-tools: Read, Grep, Glob, Task, Bash
+---
+```
+
+### 6.2 subagent prompt boilerplate（直接粘贴到 workflows/*.md）
+
+```markdown
+## 输出契约（强制）
+
+你必须遵守 `shared-rules/data-report-protocol.md` 的 §二 Quote Grounding 和 §三 Constrained Output Contract。具体要求：
+
+1. 每条 finding 必须附带 `<quote file="..." line="..."/>` 引用，内容为原文字符逐字
+2. 零命中的规则必须用 `<no-match pattern="..." scope="..."/>` 显式声明
+3. 最终输出必须是符合 §3.1 schema 的 JSON（不允许自由文本包裹）
+4. 自审阶段：扫描你的 findings，任何无 quote 支持的 claim 用 `[REMOVED:no-quote]` 标记并删除
+5. 如果无法完成扫描，输出 `scan_complete: false` + 详细 `unscanned_reason`，**不要假装扫完**
+```
+
+### 6.3 Deterministic Reduce 脚本位置约定
+
+每个 `report_generation: true` 的 skill 应在 `{skill}/scripts/aggregate_findings.py` 提供符合 §4.2 骨架的脚本。允许扩展但不允许删除四条红线。
+
+## 七、反例对照 + Iter 3 真实场景复盘
+
+### 7.1 反例 1 — AP3 瞎编 finding
+
+```markdown
+❌ 错误：
+## P0 Findings
+- cc-code-reviewer 存在严重的性能问题，需要优化
+
+✅ 正确：
+## P0 Findings
+- [REMOVED:no-quote] 原本想报"性能问题"，grep 未找到支持证据，删除。
+```
+
+### 7.2 反例 2 — AP4 silent under-reporting（Iter 3 真实场景）
+
+Iter 3 的评审报告声称"adversarial-verification.md 路径断链在 5 个 skill 中命中"，但活文档实际 grep 命中 9 处。漏报的 4 处全在 cc-planner/workflows/ 子目录，27 个 general-purpose agent 全部没扫到。
+
+**如果当时有本协议**：
+
+```json
+{
+  "scanned_patterns": [
+    {"pattern": "adversarial-verification.md", "hits": 5, "scope": "cc-*/SKILL.md 顶层"},
+  ],
+  "scan_complete": false,
+  "unscanned_reason": "未扫描 cc-planner/workflows/ 子目录，范围限定在顶层 SKILL.md"
+}
+```
+
+→ Reduce 脚本看到 `scan_complete: false` 立即告警 → 主 agent 要求补扫 → 9/5 漏报在第一轮就被捕获，不需要后来 AP4 手动发现。
+
+### 7.3 反例 3 — Aggregation drift
+
+```markdown
+❌ 错误：
+主 agent 说："我读了所有 27 个评审报告，总结如下..."（LLM 缝合）
+
+✅ 正确：
+主 agent 说："执行 python scripts/aggregate_findings.py reports/ 得到汇总 JSON。以下是脚本输出..."（Deterministic reduce）
+```
+
+## 八、版本历史
+
+| 版本 | 日期 | 变更 | 相关 Iter |
+|------|------|------|---------|
+| 1.0 | 2026-04-09 | 初始协议，三防线 + skill 引用方式 | Iter 20 |
+| 2.0 | 2026-04-09 | 新增 § 九 Generator-Evaluator 迭代修复闭环 + § 十 内容层修复模式（10 类认知负担分类） | Iter 25 |
+
+## 九、Generator-Evaluator 迭代修复闭环（防评分虚高 + 边际收益管理）
+
+> **目的**：防止报告生成 skill 在"修复-评审"迭代中出现两类失真 ——
+> ① **评分虚高**（修复方与评审方共享上下文导致的自我认可偏差）
+> ② **无效磨蹭**（9.0 分以上边际收益骤降，继续修性价比为负）
+>
+> **与 § 二/三/四 的关系**：§ 二/三/四 是**单次生成**的防失真防线（防 AP3/AP4/drift），§ 九 是**多轮迭代**的收敛控制（防 scoring bias + marginal-cost blindness）
+>
+> **理论依据**：Anthropic [Harness design for long-running apps](https://www.anthropic.com/engineering/harness-design-long-running-apps) 的 Generator-Evaluator 分离原则 + Iter 22 实战（27 个 skill 并行评审 + 37 处修复，4 轮迭代收敛）
+
+### 9.1 核心规则
+
+1. **Generator 与 Evaluator 必须在隔离上下文中执行** —— 修复方（主对话 / 主 agent）禁止直接给自己的产出打分，评分必须委托给独立 subagent（盲审模式）
+2. **每轮修复项数上限 ≤12** —— 超过 12 项会导致 Edit 行号漂移、旧问题位置与新报告错位、reviewer 无法对齐
+3. **9.0 / 9.5 双门控** —— 总分 < 9.0 → 全量修复；9.0 ≤ 总分 < 9.5 → 只修 ≥0.3 分必修项；总分 ≥ 9.5 → 收敛停手
+4. **五维度加权打分固定** —— 任何 data-report-protocol 场景下的 Evaluator 必须使用以下权重，禁止临时调整：
+   - 术语准确性 25%
+   - 因果链路完整性 30%（权重最高，因果是报告可信度的硬指标）
+   - 数字可解释性 20%
+   - 结构清晰度 15%
+   - 操作可执行性 10%
+
+### 9.2 闭环流程图
+
+> **本图展示**：报告生成的迭代修复闭环。**重点关注**：（1）Evaluator Subagent（评估器子代理）是**外部隔离**角色（橙色），不能与 Generator（生成器）共享 context；（2）每轮 ≤12 项的批量容量限制；（3）9.0 / 9.5 双门控的边际收益管理。
+
+```mermaid
+flowchart TD
+    classDef core fill:#e2d5f1,stroke:#6f42c1,stroke-width:2px,color:#3b1f6e
+    classDef newAdd fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#155724
+    classDef external fill:#ffe0b2,stroke:#e65100,stroke-width:1px,color:#bf360c
+    classDef readOnly fill:#fff8e1,stroke:#f9a825,stroke-width:1px,color:#7c6608
+    classDef warn fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#721c24
+    classDef note fill:#fffacd,stroke:#999,stroke-dasharray:5,color:#555
+
+    Start(["报告草稿 v0"]) --> Gen["Generator 生成器<br/>修复 Agent 主对话"]:::core
+    Gen --> Fix["应用 Edit 修改<br/>本轮 ≤12 项"]:::newAdd
+    Fix --> Trig{"已修满 12 项<br/>或问题全部修完？"}
+    Trig -->|否 继续修| Gen
+    Trig -->|是 触发评审| EvalSub["Evaluator Subagent 评估器<br/>独立 Grader 隔离上下文"]:::external
+    EvalSub --> Score["五维度加权打分<br/>术语 25% + 因果 30%<br/>数字 20% + 结构 15% + 操作 10%"]:::readOnly
+    Score --> Gate{"总分 ≥ 9.5？"}
+    Gate -->|是 收敛| Done(["✓ 终稿交付"]):::core
+    Gate -->|否| Gate2{"总分 ≥ 9.0？"}
+    Gate2 -->|是 边际收益区| OnlyHigh["仅修 ≥0.3 分必修项<br/>9.0+ 门控止血"]:::warn
+    Gate2 -->|否 仍有大空间| AllFix["全量修复<br/>P0 + P1 + 必修项"]
+    OnlyHigh --> Gen
+    AllFix --> Gen
+
+    EvalSub -.-> NOTE["关键约束: Grader 不可看修复过程<br/>共享上下文 = 评分虚高<br/>遵循 Anthropic Generator-Evaluator 分离原则"]:::note
+```
+
+| 样式 | 含义 |
+|------|------|
+| 紫色 | 核心入口 / 终态 |
+| 绿色 | 写入动作 |
+| 橙色 | 外部隔离上下文（独立 subagent） |
+| 黄色 | 只读评估 |
+| 红色 | 风险止血操作 |
+
+### 9.3 落地要求
+
+实现 § 九 的 skill 必须在 frontmatter 声明：
+
+```yaml
+report_iteration_loop: enabled
+report_iteration_max_per_round: 12
+report_iteration_gate_thresholds: [9.0, 9.5]
+```
+
+**落地状态（Iter 25 新增规范）**：本节为 Iter 25 新增规范，**暂无 skill 实现**。`cc-eval` 的 Grader 机制仅是概念对齐（Generator-Evaluator 隔离），但评分区间（0-1 vs 0-10）、维度体系（动态 rubric vs 五维度固定）、停机条件（0.90 单阈值 vs 9.0/9.5 双门控）均不对齐。完整落地待后续架构决策：候选方案包括新建 `eval/rubrics/domain/data-report-skills.yaml` 承载五维度权重，或将 § 九 降级为抽象框架允许 skill 自定义维度。
+
+## 十、内容层修复模式（防读者认知过载）
+
+> **目的**：补全 § 九 中 Evaluator 的打分依据 —— "因果链路 30% + 术语 25% + 数字 20%" 具体要评什么？本章给出**可判定的 10 类高频问题 + 修复模式**，按读者认知负担分为 4 大类。
+>
+> **与 N8 规则的关系**：`CLAUDE.md` 中的 N8 规则（首次新概念必须铺垫 + 数据支撑）是**元规则**，本章是 N8 的**落地清单**
+>
+> **理论依据**：Cowan 2001 工作记忆 4±1 限制 + Minto 金字塔原理 + Knaflic 数据叙事 + Iter 22 实战数据（术语表从 15→23 条贡献约 1.5 分提升）
+
+### 10.1 四类认知负担分组
+
+> **本图展示**：10 类高频问题按"目标读者需要克服的认知负担类型"分为 4 大类。**重点关注**：术语认知类占 4/10（最多），印证"术语表是最大单一提分动作"的实战判断。
+
+```mermaid
+mindmap
+  root(("内容层 10 类问题<br/>按读者认知负担分类"))
+    术语认知
+      "1. 英文术语/缩写 → 首次括号中文 + 术语表"
+      "6. 行话/黑话 → 日常类比"
+      "8. 工具名 → 加一句话解释"
+      "10. 口径过早过密 → 引导到术语表"
+    数字直觉
+      "2. 百分比反直觉 → 改倍数 + 加基线"
+      "4. 阈值无依据 → 补基线 + 波动范围"
+    因果链路
+      "3. 抽象概念 → 加数值例子"
+      "5. 跳步推理 → 补因果桥梁"
+      "7. 脚注跨节混乱 → 分节编号系统"
+    责任归属
+      "9. 责任方模糊 → 角色 + 确认时间"
+```
+
+### 10.2 修复模式对照表（Evaluator 打分依据）
+
+| # | 认知负担类 | 问题类型 | 修复模式 | 示例 | 对应打分维度 |
+|---|-----------|---------|---------|------|-------------|
+| 1 | 术语认知 | 英文术语 / 缩写 | 首次括号中文 + 术语表 | `weapp` → `weapp（微信小程序）` | 术语 25% |
+| 2 | 数字直觉 | 百分比反直觉 | 改倍数 + 加基线 | `+167%` → `增至原来的 2.7 倍` | 数字 20% |
+| 3 | 因果链路 | 抽象概念无例子 | 加数值例子 | 混合占比 → `A 班 90 分 10 人、B 班 70 分 10 人` | 数字 20% + 因果 30% |
+| 4 | 数字直觉 | 阈值无依据 | 补基线 + 波动范围 | `≥10%` → `≥10%（基线 8.3% + 正常波动 ~2pp）` | 数字 20% |
+| 5 | 因果链路 | 跳步推理 | 补因果桥梁 | `A→C` 改成 `A→B→C` | 因果 30% |
+| 6 | 术语认知 | 行话 / 黑话 | 日常类比 | 扣款排队 → `类似银行跨行转账排队` | 术语 25% |
+| 7 | 因果链路 | 脚注跨节混乱 | 分节编号系统 | 结论区 ¹²³，归因表 ①②③ | 结构 15% |
+| 8 | 术语认知 | 工具名裸露 | 加一句话解释 | `Grafana` → `Grafana（数据可视化看板）` | 术语 25% |
+| 9 | 责任归属 | 责任方模糊 | 细化到角色 + 确认时间 | `业务` → `业务 Leader（4/7 周会确认）` | 操作 10% |
+| 10 | 术语认知 | 口径定义过早过密 | 简化引导到术语表 | 正文一行概括 + `详见术语表` | 结构 15% + 术语 25% |
+
+### 10.3 最大单一提分动作
+
+**术语表从 15→23 条，贡献约 1.5 分提升**（Iter 22 实测）。
+
+- 边际效率：1.5 / (23-15) ≈ 0.19 分/条
+- 判定依据：每多一条术语解释 → 外行读者的工作记忆被占用降一档（Cowan 4±1）
+- 下一轮探索：23→30 的 ROI 是否还能维持 0.19 分/条？或进入边际递减区？
+
+### 10.4 落地要求
+
+实现 § 十 的 skill 必须：
+
+1. 维护 `terminology.md` 术语表，首次出现的英文术语 / 缩写 / 工具名必须同时在术语表登记
+2. Evaluator 评审时按 § 10.2 表格逐项扫描，每命中一条记为扣分项
+3. 修复时严禁跳过因果桥梁（§ 10.2 #5），禁止用"显然 / 明显 / 易见"代替推理步骤
+
+**落地状态（Iter 25 新增规范）**：本节为 Iter 25 新增规范，**暂无 skill 实现**。现有下游 skill（`cc-troubleshoot` / `cc-adversarial` / `cc-code-reviewer` 等）的 Grader/Reviewer prompt 均未内嵌本节 10 类扫描规则。本节当前仅作为**规范性清单**供人工 reviewer 或 future Grader 做认知负担扫描使用。落地方案待后续架构决策：候选包括新建 `eval/rubrics/domain/data-report-skills.yaml` 承载 10 类扫描项作为评分维度子项，或由 data-report-skills.yaml 统一承载五维度 + 10 类扫描。

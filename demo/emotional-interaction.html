@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Island — 情绪交互提案</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=DM+Mono:wght@300;400&display=swap');
+
+  :root {
+    --mint: rgb(140, 217, 166);
+    --peach-yellow: rgb(255, 199, 92);
+    --coral: rgb(242, 128, 128);
+    --sky: rgb(115, 209, 224);
+    --lavender: rgb(140, 179, 242);
+    --lilac: rgb(209, 140, 209);
+    --peach: rgb(230, 153, 128);
+    --bg: #0a0a0c;
+    --surface: #141418;
+    --surface-2: #1c1c22;
+    --text: #e8e6e3;
+    --text-dim: rgba(232, 230, 227, 0.45);
+    --text-dimmer: rgba(232, 230, 227, 0.25);
+    --notch-bg: #000;
+    --radius: 20px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-2) var(--bg);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans SC', sans-serif;
+    font-weight: 300;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ─── Hero ─── */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(230,153,128,0.06) 0%, transparent 70%);
+    top: 20%; left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  .hero-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--peach);
+    opacity: 0.7;
+    margin-bottom: 24px;
+    animation: fadeUp 0.8s ease-out both;
+  }
+
+  .hero h1 {
+    font-size: clamp(36px, 5vw, 56px);
+    font-weight: 700;
+    letter-spacing: -1px;
+    text-align: center;
+    line-height: 1.2;
+    animation: fadeUp 0.8s ease-out 0.15s both;
+  }
+
+  .hero h1 span {
+    background: linear-gradient(135deg, var(--peach), var(--lilac), var(--mint));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero-sub {
+    font-size: 16px;
+    color: var(--text-dim);
+    margin-top: 16px;
+    text-align: center;
+    max-width: 420px;
+    animation: fadeUp 0.8s ease-out 0.3s both;
+  }
+
+  .scroll-hint {
+    position: absolute;
+    bottom: 40px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dimmer);
+    letter-spacing: 1px;
+    animation: fadeUp 0.8s ease-out 0.6s both, float 3s ease-in-out infinite 1.4s;
+  }
+
+  /* ─── Sections ─── */
+  section {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 100px 32px;
+  }
+
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--peach);
+    opacity: 0.6;
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-size: 28px;
+    font-weight: 500;
+    letter-spacing: -0.5px;
+    margin-bottom: 48px;
+  }
+
+  .section-title em {
+    font-style: normal;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+
+  /* ─── Comparison Stage ─── */
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin-bottom: 24px;
+  }
+
+  .stage {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 40px 32px 48px;
+    position: relative;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .stage-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dimmer);
+    margin-bottom: 32px;
+  }
+
+  .stage-tag.proposed { color: var(--mint); opacity: 0.7; }
+
+  /* ─── Notch Simulation ─── */
+  .notch-sim {
+    background: var(--notch-bg);
+    border-radius: 16px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 20px;
+    position: relative;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+  }
+
+  /* ─── Current Dots ─── */
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dot.running {
+    background: var(--peach);
+    animation: mechBreathe 1.5s ease-in-out infinite;
+  }
+
+  .dot.compacting {
+    background: var(--lilac);
+    animation: mechPulse 0.8s ease-in-out infinite;
+  }
+
+  .dot.attention {
+    position: relative;
+    width: 11px; height: 11px;
+    background: none;
+  }
+
+  .dot.attention::after {
+    content: '✓';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--mint);
+  }
+
+  .dot.idle {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.35);
+  }
+
+  @keyframes mechBreathe {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+
+  @keyframes mechPulse {
+    0%, 100% { transform: scale(1); opacity: 0.7; }
+    50% { transform: scale(0.5); opacity: 1; }
+  }
+
+  /* ─── Proposed Bug Characters ─── */
+  .bug-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    height: 36px;
+  }
+
+  .bug {
+    width: 20px; height: 20px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Bug SVG base shape */
+  .bug svg {
+    width: 18px; height: 18px;
+    overflow: visible;
+  }
+
+  /* Processing bug - walking */
+  .bug.processing {
+    animation: bugWalk 0.6s ease-in-out infinite;
+  }
+
+  .bug.processing .leg-l { animation: legSwingL 0.3s ease-in-out infinite alternate; transform-origin: center; }
+  .bug.processing .leg-r { animation: legSwingR 0.3s ease-in-out infinite alternate; transform-origin: center; }
+
+  @keyframes bugWalk {
+    0%, 100% { transform: translateX(0) rotate(0deg); }
+    25% { transform: translateX(1px) rotate(2deg); }
+    75% { transform: translateX(-1px) rotate(-2deg); }
+  }
+
+  @keyframes legSwingL {
+    0% { transform: rotate(-15deg); }
+    100% { transform: rotate(15deg); }
+  }
+
+  @keyframes legSwingR {
+    0% { transform: rotate(15deg); }
+    100% { transform: rotate(-15deg); }
+  }
+
+  /* Idle bug - sleeping */
+  .bug.sleeping {
+    animation: bugSleep 3s ease-in-out infinite;
+  }
+
+  .bug.sleeping .zzz {
+    position: absolute;
+    top: -6px; right: -8px;
+    font-size: 7px;
+    font-weight: 700;
+    opacity: 0;
+    color: rgba(255,255,255,0.3);
+    animation: zzzFloat 2.5s ease-in-out infinite;
+    font-family: 'DM Mono', monospace;
+  }
+
+  @keyframes bugSleep {
+    0%, 100% { transform: translateY(0) rotate(-5deg); }
+    50% { transform: translateY(1px) rotate(-5deg); }
+  }
+
+  @keyframes zzzFloat {
+    0% { opacity: 0; transform: translateY(2px) scale(0.7); }
+    30% { opacity: 0.6; }
+    100% { opacity: 0; transform: translateY(-8px) scale(1); }
+  }
+
+  /* Attention bug - waving */
+  .bug.waving {
+    animation: bugWave 0.8s ease-in-out infinite;
+  }
+
+  .bug.waving .antenna-r {
+    animation: antennaWave 0.4s ease-in-out infinite alternate;
+    transform-origin: bottom center;
+  }
+
+  @keyframes bugWave {
+    0%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-3px); }
+    60% { transform: translateY(-1px); }
+  }
+
+  @keyframes antennaWave {
+    0% { transform: rotate(-10deg); }
+    100% { transform: rotate(20deg); }
+  }
+
+  /* Compacting bug - squeezing */
+  .bug.squeezing {
+    animation: bugSqueeze 0.8s ease-in-out infinite;
+  }
+
+  @keyframes bugSqueeze {
+    0%, 100% { transform: scaleX(1) scaleY(1); }
+    40% { transform: scaleX(1.15) scaleY(0.7); }
+    60% { transform: scaleX(0.85) scaleY(1.1); }
+  }
+
+  /* ─── State Labels ─── */
+  .state-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+    margin-top: 48px;
+  }
+
+  .state-card {
+    background: var(--surface);
+    border-radius: 16px;
+    padding: 32px 20px 28px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.04);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .state-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 40px; height: 2px;
+    border-radius: 2px;
+    opacity: 0.5;
+  }
+
+  .state-card.s-running::before { background: var(--peach); }
+  .state-card.s-idle::before { background: rgba(255,255,255,0.2); }
+  .state-card.s-attention::before { background: var(--mint); }
+  .state-card.s-compacting::before { background: var(--lilac); }
+
+  .state-card .bug-demo {
+    width: 48px; height: 48px;
+    margin: 0 auto 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .state-card .bug-demo svg { width: 36px; height: 36px; overflow: visible; }
+
+  .state-card h3 {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+
+  .state-card p {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  /* ─── Breathing Comparison ─── */
+  .breath-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    margin-top: 48px;
+  }
+
+  .breath-box {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 40px 32px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .breath-box .label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dimmer);
+    margin-bottom: 28px;
+  }
+
+  .breath-box .label.good { color: var(--mint); opacity: 0.7; }
+
+  .breath-orb {
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    margin: 0 auto 24px;
+    position: relative;
+  }
+
+  .breath-orb::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    opacity: 0.15;
+  }
+
+  .breath-orb.mechanical {
+    background: var(--peach);
+    animation: mechOrbBreathe 1.5s ease-in-out infinite;
+  }
+
+  .breath-orb.mechanical::after {
+    background: var(--peach);
+    animation: mechOrbGlow 1.5s ease-in-out infinite;
+  }
+
+  .breath-orb.organic {
+    background: var(--peach);
+    animation: organicBreathe 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  .breath-orb.organic::after {
+    background: var(--peach);
+    animation: organicGlow 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  @keyframes mechOrbBreathe {
+    0%, 100% { transform: scale(0.85); opacity: 0.6; }
+    50% { transform: scale(1); opacity: 1; }
+  }
+
+  @keyframes mechOrbGlow {
+    0%, 100% { transform: scale(0.85); opacity: 0.05; }
+    50% { transform: scale(1.1); opacity: 0.2; }
+  }
+
+  /* Organic: quick inhale (30%), slow exhale (70%) */
+  @keyframes organicBreathe {
+    0% { transform: scale(0.82); opacity: 0.55; }
+    30% { transform: scale(1.02); opacity: 1; }
+    100% { transform: scale(0.82); opacity: 0.55; }
+  }
+
+  @keyframes organicGlow {
+    0% { transform: scale(0.82); opacity: 0.05; }
+    30% { transform: scale(1.15); opacity: 0.25; }
+    100% { transform: scale(0.82); opacity: 0.05; }
+  }
+
+  .breath-wave {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .breath-wave canvas {
+    width: 100%;
+    height: 40px;
+    border-radius: 8px;
+  }
+
+  .breath-desc {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 16px;
+  }
+
+  /* ─── Firefly Section ─── */
+  .firefly-stage {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 60px 32px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.04);
+    position: relative;
+    overflow: hidden;
+    margin-top: 48px;
+  }
+
+  .firefly-stage::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 50%, rgba(230,153,128,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .firefly-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    height: 80px;
+    position: relative;
+  }
+
+  .firefly {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--peach);
+    position: relative;
+    /* JS will handle the animation */
+  }
+
+  .firefly::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+    border-radius: 50%;
+    background: var(--peach);
+    opacity: 0.12;
+    filter: blur(6px);
+  }
+
+  .firefly-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 24px;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* ─── Sparkle Transition ─── */
+  .transition-stage {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 60px 32px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.04);
+    margin-top: 48px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .transition-demo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 48px;
+    height: 80px;
+  }
+
+  .transition-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .transition-step .micro {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    color: var(--text-dimmer);
+    letter-spacing: 1px;
+  }
+
+  .arrow {
+    font-size: 16px;
+    color: var(--text-dimmer);
+    animation: arrowPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes arrowPulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.7; }
+  }
+
+  /* Sparkle burst */
+  .sparkle-wrap {
+    position: relative;
+    width: 36px; height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .sparkle-wrap .done-check {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--mint);
+    animation: checkPop 2.5s ease-out infinite;
+  }
+
+  .sparkle {
+    position: absolute;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    animation: sparkleBurst 2.5s ease-out infinite;
+  }
+
+  .sparkle:nth-child(1) { --angle: 0deg; --dist: 20px; background: var(--peach-yellow); animation-delay: 0s; }
+  .sparkle:nth-child(2) { --angle: 60deg; --dist: 18px; background: var(--mint); animation-delay: 0.05s; }
+  .sparkle:nth-child(3) { --angle: 120deg; --dist: 22px; background: var(--peach); animation-delay: 0.1s; }
+  .sparkle:nth-child(4) { --angle: 180deg; --dist: 16px; background: var(--lilac); animation-delay: 0.03s; }
+  .sparkle:nth-child(5) { --angle: 240deg; --dist: 20px; background: var(--sky); animation-delay: 0.08s; }
+  .sparkle:nth-child(6) { --angle: 300deg; --dist: 19px; background: var(--coral); animation-delay: 0.06s; }
+
+  @keyframes sparkleBurst {
+    0%, 60% { transform: rotate(var(--angle)) translateY(0) scale(0); opacity: 0; }
+    65% { transform: rotate(var(--angle)) translateY(calc(var(--dist) * -0.5)) scale(1.2); opacity: 1; }
+    80% { transform: rotate(var(--angle)) translateY(calc(var(--dist) * -1)) scale(0.8); opacity: 0.6; }
+    100% { transform: rotate(var(--angle)) translateY(calc(var(--dist) * -1.2)) scale(0); opacity: 0; }
+  }
+
+  @keyframes checkPop {
+    0%, 55% { transform: scale(0); opacity: 0; }
+    65% { transform: scale(1.3); opacity: 1; }
+    75% { transform: scale(0.9); }
+    85%, 100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* Working bug for transition */
+  .working-bug-wrap {
+    width: 36px; height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .working-bug-wrap svg {
+    width: 28px; height: 28px;
+    overflow: visible;
+    animation: bugWalk 0.6s ease-in-out infinite;
+  }
+
+  .working-bug-wrap .leg-l { animation: legSwingL 0.3s ease-in-out infinite alternate; transform-origin: center; }
+  .working-bug-wrap .leg-r { animation: legSwingR 0.3s ease-in-out infinite alternate; transform-origin: center; }
+
+  /* Stretch transition bug */
+  .stretch-bug-wrap {
+    width: 36px; height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .stretch-bug-wrap svg {
+    width: 28px; height: 28px;
+    overflow: visible;
+    animation: bugStretch 2.5s ease-in-out infinite;
+  }
+
+  @keyframes bugStretch {
+    0%, 50% { transform: scaleY(1) scaleX(1) translateY(0); }
+    58% { transform: scaleY(1.15) scaleX(0.9) translateY(-2px); }
+    66% { transform: scaleY(0.92) scaleX(1.05) translateY(0); }
+    74%, 100% { transform: scaleY(1) scaleX(1) translateY(0); }
+  }
+
+  /* ─── Footer ─── */
+  .footer {
+    text-align: center;
+    padding: 80px 32px 60px;
+    font-size: 12px;
+    color: var(--text-dimmer);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 1px;
+  }
+
+  /* ─── Utilities ─── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+
+  .divider {
+    width: 40px;
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 0 auto;
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── Hero ─── -->
+<div class="hero">
+  <div class="hero-badge">Claude Island · 情绪交互提案</div>
+  <h1>从指示灯到<span>小伙伴</span></h1>
+  <p class="hero-sub">让 notch 上的每一个状态点，从冰冷的 LED 变成有温度的陪伴</p>
+  <div class="scroll-hint">↓ 向下滚动</div>
+</div>
+
+<!-- ─── Section 1: Current vs Proposed ─── -->
+<section>
+  <div class="section-label">01 · 对比</div>
+  <div class="section-title">现状 vs 提案 <em>— Notch 区域</em></div>
+
+  <div class="comparison">
+    <!-- Current -->
+    <div class="stage">
+      <div class="stage-tag">当前 · 信号灯</div>
+      <div class="notch-sim">
+        <div class="dot attention"></div>
+        <div class="dot compacting"></div>
+        <div class="dot running"></div>
+        <div class="dot idle"></div>
+      </div>
+    </div>
+
+    <!-- Proposed -->
+    <div class="stage">
+      <div class="stage-tag proposed">提案 · 小伙伴</div>
+      <div class="notch-sim">
+        <div class="bug waving" title="等待输入">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="6" fill="rgb(140,217,166)" opacity="0.9"/>
+            <ellipse cx="12" cy="13" rx="6" ry="5" fill="rgb(140,217,166)"/>
+            <circle cx="10" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <circle cx="14" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <line class="antenna-r" x1="14" y1="8" x2="17" y2="4" stroke="rgb(140,217,166)" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="10" y1="8" x2="7" y2="5" stroke="rgb(140,217,166)" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="17" cy="4" r="1" fill="rgb(140,217,166)" opacity="0.6"/>
+            <circle cx="7" cy="5" r="1" fill="rgb(140,217,166)" opacity="0.6"/>
+          </svg>
+        </div>
+        <div class="bug squeezing" title="压缩中">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="6" fill="rgb(209,140,209)" opacity="0.9"/>
+            <ellipse cx="12" cy="13" rx="6" ry="5" fill="rgb(209,140,209)"/>
+            <circle cx="10" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <circle cx="14" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <line x1="14" y1="8" x2="16" y2="5" stroke="rgb(209,140,209)" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="10" y1="8" x2="8" y2="5" stroke="rgb(209,140,209)" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="bug processing" title="处理中">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="6" fill="rgb(230,153,128)" opacity="0.9"/>
+            <ellipse cx="12" cy="13" rx="6" ry="5" fill="rgb(230,153,128)"/>
+            <circle cx="10" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <circle cx="14" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <line x1="14" y1="8" x2="16" y2="5" stroke="rgb(230,153,128)" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="10" y1="8" x2="8" y2="5" stroke="rgb(230,153,128)" stroke-width="1.2" stroke-linecap="round"/>
+            <line class="leg-l" x1="8" y1="16" x2="5" y2="19" stroke="rgb(230,153,128)" stroke-width="1" stroke-linecap="round"/>
+            <line class="leg-r" x1="16" y1="16" x2="19" y2="19" stroke="rgb(230,153,128)" stroke-width="1" stroke-linecap="round"/>
+            <line class="leg-l" x1="7" y1="14" x2="4" y2="15" stroke="rgb(230,153,128)" stroke-width="1" stroke-linecap="round"/>
+            <line class="leg-r" x1="17" y1="14" x2="20" y2="15" stroke="rgb(230,153,128)" stroke-width="1" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="bug sleeping" title="空闲">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="6" fill="rgba(255,255,255,0.25)" opacity="0.9"/>
+            <ellipse cx="12" cy="13" rx="6" ry="5" fill="rgba(255,255,255,0.2)"/>
+            <!-- Closed eyes -->
+            <line x1="9" y1="12.5" x2="11" y2="12.5" stroke="#000" stroke-width="1" stroke-linecap="round" opacity="0.35"/>
+            <line x1="13" y1="12.5" x2="15" y2="12.5" stroke="#000" stroke-width="1" stroke-linecap="round" opacity="0.35"/>
+            <line x1="14" y1="8" x2="16" y2="5" stroke="rgba(255,255,255,0.2)" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="10" y1="8" x2="8" y2="5" stroke="rgba(255,255,255,0.2)" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          <span class="zzz">z</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ─── Section 2: State Cards ─── -->
+<section>
+  <div class="section-label">02 · 状态图鉴</div>
+  <div class="section-title">四种情绪 <em>— 每个状态都有性格</em></div>
+
+  <div class="state-grid">
+    <!-- Running -->
+    <div class="state-card s-running">
+      <div class="bug-demo">
+        <div class="bug processing">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="6" fill="rgb(230,153,128)" opacity="0.9"/>
+            <ellipse cx="12" cy="13" rx="6" ry="5" fill="rgb(230,153,128)"/>
+            <circle cx="10" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <circle cx="14" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <line x1="14" y1="8" x2="16" y2="5" stroke="rgb(230,153,128)" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="10" y1="8" x2="8" y2="5" stroke="rgb(230,153,128)" stroke-width="1.2" stroke-linecap="round"/>
+            <line class="leg-l" x1="8" y1="16" x2="5" y2="19" stroke="rgb(230,153,128)" stroke-width="1" stroke-linecap="round"/>
+            <line class="leg-r" x1="16" y1="16" x2="19" y2="19" stroke="rgb(230,153,128)" stroke-width="1" stroke-linecap="round"/>
+            <line class="leg-l" x1="7" y1="14" x2="4" y2="15" stroke="rgb(230,153,128)" stroke-width="1" stroke-linecap="round"/>
+            <line class="leg-r" x1="17" y1="14" x2="20" y2="15" stroke="rgb(230,153,128)" stroke-width="1" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+      <h3>处理中</h3>
+      <p>小脚快步走，传达<br/>"正在赶工"的勤劳感</p>
+    </div>
+
+    <!-- Attention -->
+    <div class="state-card s-attention">
+      <div class="bug-demo">
+        <div class="bug waving">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="6" fill="rgb(140,217,166)" opacity="0.9"/>
+            <ellipse cx="12" cy="13" rx="6" ry="5" fill="rgb(140,217,166)"/>
+            <circle cx="10" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <circle cx="14" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <line class="antenna-r" x1="14" y1="8" x2="17" y2="4" stroke="rgb(140,217,166)" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="10" y1="8" x2="7" y2="5" stroke="rgb(140,217,166)" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="17" cy="4" r="1.2" fill="rgb(140,217,166)" opacity="0.6"/>
+            <circle cx="7" cy="5" r="1.2" fill="rgb(140,217,166)" opacity="0.6"/>
+          </svg>
+        </div>
+      </div>
+      <h3>等你来</h3>
+      <p>触角招手，弹跳引起<br/>注意又不失礼貌</p>
+    </div>
+
+    <!-- Compacting -->
+    <div class="state-card s-compacting">
+      <div class="bug-demo">
+        <div class="bug squeezing">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="6" fill="rgb(209,140,209)" opacity="0.9"/>
+            <ellipse cx="12" cy="13" rx="6" ry="5" fill="rgb(209,140,209)"/>
+            <circle cx="10" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <circle cx="14" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <line x1="14" y1="8" x2="16" y2="5" stroke="rgb(209,140,209)" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="10" y1="8" x2="8" y2="5" stroke="rgb(209,140,209)" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+      <h3>压缩中</h3>
+      <p>身体有节奏地挤压<br/>语义即动画："在压缩"</p>
+    </div>
+
+    <!-- Idle -->
+    <div class="state-card s-idle">
+      <div class="bug-demo">
+        <div class="bug sleeping">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="6" fill="rgba(255,255,255,0.25)"/>
+            <ellipse cx="12" cy="13" rx="6" ry="5" fill="rgba(255,255,255,0.2)"/>
+            <line x1="9" y1="12.5" x2="11" y2="12.5" stroke="#000" stroke-width="1.2" stroke-linecap="round" opacity="0.35"/>
+            <line x1="13" y1="12.5" x2="15" y2="12.5" stroke="#000" stroke-width="1.2" stroke-linecap="round" opacity="0.35"/>
+            <line x1="14" y1="8" x2="16" y2="5" stroke="rgba(255,255,255,0.2)" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="10" y1="8" x2="8" y2="5" stroke="rgba(255,255,255,0.2)" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          <span class="zzz">z</span>
+        </div>
+      </div>
+      <h3>打盹中</h3>
+      <p>闭眼微晃，飘出 z<br/>安静的存在感</p>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ─── Section 3: Breathing ─── -->
+<section>
+  <div class="section-label">03 · 呼吸节奏</div>
+  <div class="section-title">机械正弦波 vs 拟人呼吸 <em>— 微妙但关键</em></div>
+
+  <div class="breath-compare">
+    <div class="breath-box">
+      <div class="label">当前 · 机械等速</div>
+      <div class="breath-orb mechanical"></div>
+      <canvas id="wave-mech" style="width:100%;height:40px;border-radius:8px"></canvas>
+      <div class="breath-desc">对称正弦波 — 匀速亮暗<br/>精确但缺乏生气</div>
+    </div>
+    <div class="breath-box">
+      <div class="label good">提案 · 快吸慢呼</div>
+      <div class="breath-orb organic"></div>
+      <canvas id="wave-organic" style="width:100%;height:40px;border-radius:8px"></canvas>
+      <div class="breath-desc">不对称曲线 — 30% 快吸入，70% 慢呼出<br/>真实呼吸的节奏，有生命感</div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ─── Section 4: Firefly Sync ─── -->
+<section>
+  <div class="section-label">04 · 萤火虫同步</div>
+  <div class="section-title">多会话协作感 <em>— 独立又默契</em></div>
+
+  <div class="firefly-stage">
+    <div class="firefly-container" id="firefly-container">
+      <div class="firefly" id="ff-0"></div>
+      <div class="firefly" id="ff-1"></div>
+      <div class="firefly" id="ff-2"></div>
+      <div class="firefly" id="ff-3"></div>
+    </div>
+    <div class="firefly-label">
+      四个会话各自呼吸，每隔一段时间节奏自然同步，然后再慢慢散开<br/>
+      像一群萤火虫 — 暗示"在一起工作"
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ─── Section 5: Transition ─── -->
+<section>
+  <div class="section-label">05 · 状态过渡</div>
+  <div class="section-title">完成时刻的正反馈 <em>— 情绪收束</em></div>
+
+  <div class="transition-stage">
+    <div class="transition-demo">
+      <div class="transition-step">
+        <div class="working-bug-wrap">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="6" fill="rgb(230,153,128)" opacity="0.9"/>
+            <ellipse cx="12" cy="13" rx="6" ry="5" fill="rgb(230,153,128)"/>
+            <circle cx="10" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <circle cx="14" cy="12" r="1.2" fill="#000" opacity="0.5"/>
+            <line x1="14" y1="8" x2="16" y2="5" stroke="rgb(230,153,128)" stroke-width="1.2" stroke-linecap="round"/>
+            <line x1="10" y1="8" x2="8" y2="5" stroke="rgb(230,153,128)" stroke-width="1.2" stroke-linecap="round"/>
+            <line class="leg-l" x1="8" y1="16" x2="5" y2="19" stroke="rgb(230,153,128)" stroke-width="1" stroke-linecap="round"/>
+            <line class="leg-r" x1="16" y1="16" x2="19" y2="19" stroke="rgb(230,153,128)" stroke-width="1" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="micro">处理中</div>
+      </div>
+
+      <div class="arrow">→</div>
+
+      <div class="transition-step">
+        <div class="stretch-bug-wrap">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="13" r="6" fill="rgb(230,153,128)" opacity="0.7"/>
+            <ellipse cx="12" cy="13" rx="6" ry="5" fill="rgb(230,153,128)" opacity="0.7"/>
+            <circle cx="10" cy="12" r="1.2" fill="#000" opacity="0.4"/>
+            <circle cx="14" cy="12" r="1.2" fill="#000" opacity="0.4"/>
+            <line x1="14" y1="8" x2="16" y2="5" stroke="rgb(230,153,128)" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+            <line x1="10" y1="8" x2="8" y2="5" stroke="rgb(230,153,128)" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+          </svg>
+        </div>
+        <div class="micro">伸懒腰</div>
+      </div>
+
+      <div class="arrow">→</div>
+
+      <div class="transition-step">
+        <div class="sparkle-wrap">
+          <span class="sparkle"></span>
+          <span class="sparkle"></span>
+          <span class="sparkle"></span>
+          <span class="sparkle"></span>
+          <span class="sparkle"></span>
+          <span class="sparkle"></span>
+          <span class="done-check">✓</span>
+        </div>
+        <div class="micro">完成 ✨</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="footer">
+  Claude Island · Emotional Interaction Proposal · 2026
+</div>
+
+<script>
+// ─── Waveform Canvases ───
+function drawWave(canvasId, waveFn, color) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+
+  const w = rect.width, h = rect.height;
+  const mid = h / 2;
+  const amp = h * 0.35;
+
+  function render(ts) {
+    ctx.clearRect(0, 0, w, h);
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, mid); ctx.lineTo(w, mid);
+    ctx.stroke();
+    // Wave
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = 0; x < w; x++) {
+      const t = (x / w + ts / 3000) % 1;
+      const y = mid - amp * waveFn(t);
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    // Glow
+    ctx.strokeStyle = color.replace(')', ',0.15)').replace('rgb', 'rgba');
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    for (let x = 0; x < w; x++) {
+      const t = (x / w + ts / 3000) % 1;
+      const y = mid - amp * waveFn(t);
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+}
+
+// Mechanical: symmetric sine
+drawWave('wave-mech', t => Math.sin(t * Math.PI * 2), 'rgb(230,153,128)');
+
+// Organic: quick rise (30%), slow fall (70%)
+drawWave('wave-organic', t => {
+  if (t < 0.3) {
+    // Quick inhale: accelerating rise
+    const p = t / 0.3;
+    return Math.sin(p * Math.PI / 2);
+  } else {
+    // Slow exhale: decelerating fall
+    const p = (t - 0.3) / 0.7;
+    return Math.cos(p * Math.PI / 2);
+  }
+}, 'rgb(140,217,166)');
+
+// ─── Firefly Sync Animation ───
+(function() {
+  const flies = [
+    { el: document.getElementById('ff-0'), phase: 0, freq: 1.3, baseFreq: 1.3 },
+    { el: document.getElementById('ff-1'), phase: 0.7, freq: 1.5, baseFreq: 1.5 },
+    { el: document.getElementById('ff-2'), phase: 1.4, freq: 1.1, baseFreq: 1.1 },
+    { el: document.getElementById('ff-3'), phase: 2.1, freq: 1.7, baseFreq: 1.7 },
+  ];
+
+  let syncTimer = 0;
+  const syncInterval = 6; // seconds between sync events
+  const syncDuration = 2.5; // seconds of sync
+  let syncing = false;
+
+  function tick(ts) {
+    const t = ts / 1000;
+    syncTimer = t % (syncInterval + syncDuration);
+    syncing = syncTimer > syncInterval;
+
+    flies.forEach((f, i) => {
+      let freq, phase;
+      if (syncing) {
+        // Lerp toward unified frequency and phase
+        const syncProgress = (syncTimer - syncInterval) / syncDuration;
+        const ease = syncProgress * syncProgress * (3 - 2 * syncProgress); // smoothstep
+        freq = f.baseFreq + (1.4 - f.baseFreq) * ease;
+        phase = f.phase + (0 - f.phase) * ease * 0.5;
+      } else {
+        freq = f.baseFreq;
+        phase = f.phase;
+      }
+
+      const val = (Math.sin((t + phase) * freq * Math.PI * 2) + 1) / 2;
+      const opacity = 0.3 + val * 0.7;
+      const scale = 0.8 + val * 0.3;
+      const glow = 4 + val * 10;
+
+      f.el.style.opacity = opacity;
+      f.el.style.transform = `scale(${scale})`;
+      f.el.style.boxShadow = `0 0 ${glow}px rgba(230,153,128,${val * 0.4})`;
+    });
+
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
+</script>
+
+</body>
+</html>
