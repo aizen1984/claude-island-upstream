@@ -31,6 +31,11 @@ struct NotchView: View {
     @State private var wasProcessing: Bool = false
     @State private var textCelebrationUntil: Date? = nil
     @AppStorage("status.text.preset") private var statusTextPreset: String = "搬砖中"
+    @AppStorage("notch.displayMode") private var displayModeRaw: String = NotchDisplayMode.animated.rawValue
+
+    private var displayMode: NotchDisplayMode {
+        NotchDisplayMode(rawValue: displayModeRaw) ?? .animated
+    }
 
     /// Primary session phase used to color the status text. Priority:
     /// attention > compacting > processing > idle.
@@ -143,9 +148,11 @@ struct NotchView: View {
         return leftSlot
     }
 
-    /// Pixel budget for the SessionConstellationView on the right of the
-    /// closed notch. Must stay in sync with the actual layout in
-    /// `SessionConstellationView.body` — change both together.
+    /// Pixel budget for the constellation area. Branches on displayMode
+    /// because the static view uses narrower monospace characters vs the
+    /// animated Ripple icons. Keep in sync with the view-side layout
+    /// constants (`SessionConstellationView.iconSize/spacing/maxVisible`
+    /// and `StaticConstellationView.charWidth/spacing/maxVisible`).
     private func constellationSlotWidth() -> CGFloat {
         let instances = sessionMonitor.instances
         let attentionCount = instances.filter {
@@ -159,17 +166,27 @@ struct NotchView: View {
         let total = attentionCount + runningCount + idleCount
         guard total > 0 else { return 0 }
 
-        // Overflow now occupies a regular ghost-sized slot (rendered as the
-        // "+N" OverflowGhost), so every visible slot is `iconSize` wide.
-        let maxVisible = SessionConstellationView.maxVisible
-        let slotCount = min(total, maxVisible)
+        switch displayMode {
+        case .animated:
+            let maxVisible = SessionConstellationView.maxVisible
+            let slotCount = min(total, maxVisible)
+            let iconSize = SessionConstellationView.iconSize
+            var width = CGFloat(slotCount) * iconSize
+            if slotCount > 1 {
+                width += CGFloat(slotCount - 1) * SessionConstellationView.spacing
+            }
+            return width
 
-        let iconSize = SessionConstellationView.iconSize
-        var width = CGFloat(slotCount) * iconSize
-        if slotCount > 1 {
-            width += CGFloat(slotCount - 1) * SessionConstellationView.spacing
+        case .staticText:
+            let maxVisible = StaticConstellationView.maxVisible
+            let slotCount = min(total, maxVisible)
+            let charWidth = StaticConstellationView.charWidth
+            var width = CGFloat(slotCount) * charWidth
+            if slotCount > 1 {
+                width += CGFloat(slotCount - 1) * StaticConstellationView.spacing
+            }
+            return width
         }
-        return width
     }
 
     private var notchSize: CGSize {
@@ -247,7 +264,11 @@ struct NotchView: View {
                         radius: 6
                     )
                     .overlay(alignment: .bottom) {
-                        if viewModel.status != .opened && hasAnySessions && !pauseController.isPaused {
+                        // Light strip only renders under .animated mode: it's
+                        // another repeatForever CA subtree, which the static
+                        // mode exists specifically to avoid.
+                        if viewModel.status != .opened && hasAnySessions
+                           && !pauseController.isPaused && displayMode == .animated {
                             StatusLightStrip(sessions: sessionMonitor.instances)
                                 .offset(y: 5)
                                 .transition(.opacity)
@@ -403,12 +424,17 @@ struct NotchView: View {
                     Text(statusPhrase + "....")
                         .font(.system(size: 10, weight: .black))
                         .opacity(0)
-                    AnimatedStatusText(
-                        phrase: statusPhrase,
-                        dotCount: dotCount,
-                        color: statusTextColor,
-                        celebrationUntil: textCelebrationUntil
-                    )
+                    switch displayMode {
+                    case .animated:
+                        AnimatedStatusText(
+                            phrase: statusPhrase,
+                            dotCount: dotCount,
+                            color: statusTextColor,
+                            celebrationUntil: textCelebrationUntil
+                        )
+                    case .staticText:
+                        StaticStatusText(phrase: statusPhrase, color: statusTextColor)
+                    }
                 }
                 .lineLimit(1)
                 .fixedSize()
@@ -452,11 +478,20 @@ struct NotchView: View {
             // a glance, not just "something is happening" vs "someone wants
             // input". See SessionConstellationView for layout details.
             if showClosedActivity && viewModel.status != .opened && !pauseController.isPaused {
-                SessionConstellationView(
-                    sessions: sessionMonitor.instances,
-                    unacknowledgedAttentionIds: unacknowledgedAttentionIds
-                )
-                .padding(.trailing, 8)
+                switch displayMode {
+                case .animated:
+                    SessionConstellationView(
+                        sessions: sessionMonitor.instances,
+                        unacknowledgedAttentionIds: unacknowledgedAttentionIds
+                    )
+                    .padding(.trailing, 8)
+                case .staticText:
+                    StaticConstellationView(
+                        sessions: sessionMonitor.instances,
+                        unacknowledgedAttentionIds: unacknowledgedAttentionIds
+                    )
+                    .padding(.trailing, 8)
+                }
             }
         }
         .frame(height: closedNotchSize.height)
@@ -650,6 +685,23 @@ struct NotchView: View {
         }
 
         return false
+    }
+}
+
+// MARK: - Static Status Text
+
+/// Zero-animation counterpart to AnimatedStatusText. Plain colored text
+/// with a single subtle glow shadow so it stays readable against the
+/// black notch; no breath, no dot roll, no celebration pulse.
+private struct StaticStatusText: View {
+    let phrase: String
+    let color: Color
+
+    var body: some View {
+        Text(phrase)
+            .font(.system(size: 10, weight: .black))
+            .foregroundColor(color)
+            .shadow(color: color.opacity(0.4), radius: 2)
     }
 }
 

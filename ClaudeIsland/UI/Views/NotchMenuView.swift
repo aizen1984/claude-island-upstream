@@ -22,6 +22,7 @@ struct NotchMenuView: View {
     @State private var launchAtLogin: Bool = false
 
     @AppStorage("status.text.preset") private var statusTextPreset: String = "搬砖中"
+    @AppStorage("notch.displayMode") private var displayModeRaw: String = NotchDisplayMode.animated.rawValue
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -43,6 +44,17 @@ struct NotchMenuView: View {
             SoundPickerRow(soundSelector: soundSelector)
 
             StatusTextPickerRow(selection: $statusTextPreset, viewModel: viewModel)
+
+            // Animation toggle — Off switches the notch to the static
+            // "HTML" view (colored character dots, zero repeatForever).
+            MenuToggleRow(
+                icon: "sparkles",
+                label: "Animations",
+                isOn: displayModeRaw == NotchDisplayMode.animated.rawValue
+            ) {
+                let current = NotchDisplayMode(rawValue: displayModeRaw) ?? .animated
+                displayModeRaw = (current == .animated ? NotchDisplayMode.staticText : .animated).rawValue
+            }
 
             Divider()
                 .background(Color.white.opacity(0.08))
