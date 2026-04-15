@@ -22,6 +22,7 @@ struct NotchView: View {
     @StateObject private var activityCoordinator = NotchActivityCoordinator.shared
     @ObservedObject private var updateManager = UpdateManager.shared
     @ObservedObject private var ackTracker = AcknowledgmentTracker.shared
+    @ObservedObject private var pauseController = AnimationPauseController.shared
     @State private var previousWaitingForInputIds: Set<String> = []
     @State private var isVisible: Bool = false
     @State private var isHovering: Bool = false
@@ -246,7 +247,7 @@ struct NotchView: View {
                         radius: 6
                     )
                     .overlay(alignment: .bottom) {
-                        if viewModel.status != .opened && hasAnySessions {
+                        if viewModel.status != .opened && hasAnySessions && !pauseController.isPaused {
                             StatusLightStrip(sessions: sessionMonitor.instances)
                                 .offset(y: 5)
                                 .transition(.opacity)
@@ -397,7 +398,7 @@ struct NotchView: View {
             // without the layout hunting its own width. The extra dot is
             // cheap headroom — it guarantees the 3-dot animation phase
             // renders fully even when font metrics are slightly off.
-            if showClosedActivity && viewModel.status != .opened {
+            if showClosedActivity && viewModel.status != .opened && !pauseController.isPaused {
                 ZStack(alignment: .leading) {
                     Text(statusPhrase + "....")
                         .font(.system(size: 10, weight: .black))
@@ -450,7 +451,7 @@ struct NotchView: View {
             // (breathing), ○ for idle. Lets the user see the full fleet at
             // a glance, not just "something is happening" vs "someone wants
             // input". See SessionConstellationView for layout details.
-            if showClosedActivity && viewModel.status != .opened {
+            if showClosedActivity && viewModel.status != .opened && !pauseController.isPaused {
                 SessionConstellationView(
                     sessions: sessionMonitor.instances,
                     unacknowledgedAttentionIds: unacknowledgedAttentionIds

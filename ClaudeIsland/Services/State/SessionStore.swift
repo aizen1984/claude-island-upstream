@@ -47,9 +47,15 @@ actor SessionStore {
     /// Publisher for session state changes (nonisolated for Combine subscription from any context)
     private nonisolated(unsafe) let sessionsSubject = CurrentValueSubject<[SessionState], Never>([])
 
-    /// Public publisher for UI subscription
+    /// Public publisher for UI subscription.
+    /// 100ms throttle: hook event bursts (4-5 sessions each emitting
+    /// PreToolUse/PostToolUse/Stream in quick succession) compress into
+    /// at most 10 body rebuilds/sec. Hotkey read path uses
+    /// `currentSessions` (sync value) so navigation stays instant.
     nonisolated var sessionsPublisher: AnyPublisher<[SessionState], Never> {
-        sessionsSubject.eraseToAnyPublisher()
+        sessionsSubject
+            .throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
+            .eraseToAnyPublisher()
     }
 
     /// Current snapshot of all sessions (thread-safe, synchronous read).
