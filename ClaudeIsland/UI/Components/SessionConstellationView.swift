@@ -27,11 +27,18 @@ struct SessionConstellationView: View {
     //
     // Kept UI-local (not in SessionState) so the core state model stays
     // small. Updated on every sessions change via `onChange`.
+    //
+    // One Dict (was three) — a single filter pass in syncPhaseTracking
+    // can't leak. Prior design had three parallel Dicts that had to be
+    // filtered in lockstep, easy to miss one and grow memory.
 
-    @State private var phaseEntryTimes: [String: Date] = [:]
-    @State private var lastKnownPhases: [String: SessionPhase] = [:]
-    /// Session → when its current celebration animation should end.
-    @State private var celebrationDeadlines: [String: Date] = [:]
+    private struct PhaseTracking {
+        let phase: SessionPhase
+        let enteredAt: Date
+        var celebrationDeadline: Date?
+    }
+
+    @State private var phaseTracking: [String: PhaseTracking] = [:]
 
     /// Only suns that were processing for at least this long get a
     /// celebration animation when they transition to a done state.
@@ -107,42 +114,67 @@ struct SessionConstellationView: View {
         let currentIds = Set(sessions.map(\.sessionId))
 
         for session in sessions {
-            let prev = lastKnownPhases[session.sessionId]
-            guard prev != session.phase else { continue }
+            let prev = phaseTracking[session.sessionId]
+            guard prev?.phase != session.phase else { continue }
 
-            if prev == .processing,
-               let entryTime = phaseEntryTimes[session.sessionId],
+            var celebrationDeadline = prev?.celebrationDeadline
+            if prev?.phase == .processing,
+               let entryTime = prev?.enteredAt,
                now.timeIntervalSince(entryTime) >= Self.celebrationThreshold,
                session.phase == .waitingForInput || session.phase == .idle {
-                celebrationDeadlines[session.sessionId] = now.addingTimeInterval(Self.celebrationDuration)
+                celebrationDeadline = now.addingTimeInterval(Self.celebrationDuration)
             }
 
-            phaseEntryTimes[session.sessionId] = now
-            lastKnownPhases[session.sessionId] = session.phase
+            phaseTracking[session.sessionId] = PhaseTracking(
+                phase: session.phase,
+                enteredAt: now,
+                celebrationDeadline: celebrationDeadline
+            )
         }
 
-        phaseEntryTimes = phaseEntryTimes.filter { currentIds.contains($0.key) }
-        lastKnownPhases = lastKnownPhases.filter { currentIds.contains($0.key) }
-        celebrationDeadlines = celebrationDeadlines.filter {
-            currentIds.contains($0.key) && $0.value > now
+        // Single filter pass: drop dead sessions + expire stale celebrations.
+        phaseTracking = phaseTracking.reduce(into: [:]) { acc, entry in
+            guard currentIds.contains(entry.key) else { return }
+            var track = entry.value
+            if let deadline = track.celebrationDeadline, deadline <= now {
+                track.celebrationDeadline = nil
+            }
+            acc[entry.key] = track
         }
+    }
+
+    /// Celebration deadline lookup — replaces the old `celebrationDeadlines`
+    /// Dict call sites. Returns nil if no active celebration for session.
+    private func celebrationDeadline(for sessionId: String) -> Date? {
+        phaseTracking[sessionId]?.celebrationDeadline
     }
 
     @ViewBuilder
     private func itemView(_ item: Item, runningIndex: Int) -> some View {
+        let size = Self.iconSize
         switch item {
         case .attention(let session):
-            AttentionRipple(
-                celebrationDeadline: celebrationDeadlines[session.sessionId]
-            )
+            let deadline = celebrationDeadline(for: session.sessionId)
+            RippleIndicator(config: .attention)
+                .overlay {
+                    if deadline != nil {
+                        CelebrationOverlay(deadline: deadline, size: size)
+                    }
+                }
         case .compacting:
-            CompactingRipple()
+            RippleIndicator(config: .compacting)
         case .running:
-            RunningRipple(phaseIndex: runningIndex)
+            RippleIndicator(config: .running(phaseIndex: runningIndex))
         case .idle(let session):
-            IdleRipple(
-                celebrationDeadline: celebrationDeadlines[session.sessionId]
-            )
+            let deadline = celebrationDeadline(for: session.sessionId)
+            RippleIndicator(config: .idle)
+                .overlay {
+                    if deadline != nil {
+                        CelebrationOverlay(deadline: deadline, size: size)
+                    } else {
+                        ZzzMark(size: size)
+                    }
+                }
         case .overflow(let count):
             OverflowRipple(count: count)
         }
@@ -278,197 +310,6 @@ private struct CelebrationOverlay: View {
                     try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
                 }
                 isExpired = true
-            }
-        }
-    }
-}
-
-// MARK: - Running Ripple (工作中)
-
-/// Peach dot with a slow outward ripple and breathing center.
-private struct RunningRipple: View {
-    let phaseIndex: Int
-
-    @State private var breath: Double = 0
-    @State private var ringProgress: Double = 0
-
-    var body: some View {
-        let size = SessionConstellationView.iconSize
-        let centerSize = size * SessionConstellationView.centerSizeRatio
-        let ringMaxScale = SessionConstellationView.ringMaxScale
-        ZStack {
-            Circle()
-                .fill(TerminalColors.prompt)
-                .frame(width: centerSize, height: centerSize)
-                .opacity(0.78 + breath * 0.22)
-
-            Circle()
-                .stroke(TerminalColors.prompt, lineWidth: max(0.6, (1 - ringProgress) * 1.6))
-                .frame(width: centerSize, height: centerSize)
-                .scaleEffect(1.0 + ringProgress * (ringMaxScale - 1.0))
-                .opacity(0.55 * (1 - ringProgress))
-        }
-        .frame(width: size, height: size)
-        .task {
-            // .task 随 view 生命周期自动取消，避免 session 短命时
-            // 延迟闭包对已销毁视图写 @State
-            let phaseDelay = Double(phaseIndex) * 0.25
-            if phaseDelay > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(phaseDelay * 1_000_000_000))
-            }
-            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                breath = 1.0
-            }
-            withAnimation(.linear(duration: 3.0).repeatForever(autoreverses: false)) {
-                ringProgress = 1.0
-            }
-        }
-    }
-}
-
-// MARK: - Attention Ripple (喊你)
-
-/// Mint-green dot with fast double-burst ripples — the staggered rings are
-/// unique to this state so the user spots it from the corner of their eye.
-/// Celebrates briefly when it arrives here after long work.
-private struct AttentionRipple: View {
-    let celebrationDeadline: Date?
-
-    @State private var centerScale: Double = 1.0
-    @State private var r1: Double = 0
-    @State private var r2: Double = 0
-
-    var body: some View {
-        let size = SessionConstellationView.iconSize
-        let centerSize = size * SessionConstellationView.centerSizeRatio
-        let ringMaxScale = SessionConstellationView.ringMaxScale
-        ZStack {
-            Circle()
-                .fill(TerminalColors.green)
-                .frame(width: centerSize, height: centerSize)
-                .scaleEffect(centerScale)
-
-            // 两条独立 ring 展开成兄弟 View（而不是 ForEach），
-            // 避免 id:\.self 在 r1==r2 帧发生 ID collision、
-            // 也避免数组标识每帧变更导致 CA layer 反复重建。
-            Circle()
-                .stroke(TerminalColors.green, lineWidth: max(0.6, (1 - r1) * 1.6))
-                .frame(width: centerSize, height: centerSize)
-                .scaleEffect(1.0 + r1 * (ringMaxScale - 1.0))
-                .opacity(0.7 * (1 - r1))
-            Circle()
-                .stroke(TerminalColors.green, lineWidth: max(0.6, (1 - r2) * 1.6))
-                .frame(width: centerSize, height: centerSize)
-                .scaleEffect(1.0 + r2 * (ringMaxScale - 1.0))
-                .opacity(0.7 * (1 - r2))
-        }
-        .frame(width: size, height: size)
-        .overlay {
-            if celebrationDeadline != nil {
-                CelebrationOverlay(deadline: celebrationDeadline, size: size)
-            }
-        }
-        .task {
-            withAnimation(.easeInOut(duration: 0.3).repeatForever(autoreverses: true)) {
-                centerScale = 1.25
-            }
-            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
-                r1 = 1.0
-            }
-            // 第二条环延迟 0.45s 起跑实现 staggered double-burst
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
-                r2 = 1.0
-            }
-        }
-    }
-}
-
-// MARK: - Compacting Ripple (被挤)
-
-/// Lilac dot with an asymmetric squeeze + medium ripple — the scale
-/// distortion reads as "context is being compressed".
-private struct CompactingRipple: View {
-    @State private var squeeze: Double = 0  // 0 = wide/short, 1 = narrow/tall
-    @State private var ringProgress: Double = 0
-
-    var body: some View {
-        let size = SessionConstellationView.iconSize
-        let centerSize = size * SessionConstellationView.centerSizeRatio
-        let ringMaxScale = SessionConstellationView.ringMaxScale
-        let scaleX = 1.0 + (1.0 - squeeze) * 0.18
-        let scaleY = 0.75 + squeeze * 0.25
-        let centerOpacity = 0.82 + squeeze * 0.18
-        ZStack {
-            Circle()
-                .fill(TerminalColors.magenta)
-                .frame(width: centerSize, height: centerSize)
-                .opacity(centerOpacity)
-
-            Circle()
-                .stroke(TerminalColors.magenta, lineWidth: max(0.6, (1 - ringProgress) * 1.6))
-                .frame(width: centerSize, height: centerSize)
-                .scaleEffect(1.0 + ringProgress * (ringMaxScale - 1.0))
-                .opacity(0.45 * (1 - ringProgress))
-        }
-        .frame(width: size, height: size)
-        .scaleEffect(x: scaleX, y: scaleY)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true)) {
-                squeeze = 1.0
-            }
-            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
-                ringProgress = 1.0
-            }
-        }
-    }
-}
-
-// MARK: - Idle Ripple (歇了)
-
-/// Dim gray dot, no rings, with a floating Zzz. Celebrates briefly when
-/// arriving here after long work.
-private struct IdleRipple: View {
-    let celebrationDeadline: Date?
-
-    @State private var centerBreath: Double = 0
-    @State private var zzzOffsetY: Double = -2
-    @State private var zzzOpacity: Double = 0
-
-    var body: some View {
-        let size = SessionConstellationView.iconSize
-        let centerSize = size * SessionConstellationView.centerSizeRatio
-        ZStack {
-            Circle()
-                .fill(Color.white.opacity(0.7))
-                .frame(width: centerSize, height: centerSize)
-                .opacity(0.45 + centerBreath * 0.35)
-
-            if celebrationDeadline == nil {
-                Text("Z")
-                    .font(.system(size: size * 0.42, weight: .black, design: .rounded))
-                    .italic()
-                    .foregroundColor(Color.white.opacity(zzzOpacity))
-                    .offset(x: size * 0.32, y: zzzOffsetY - size * 0.18)
-            }
-        }
-        .frame(width: size, height: size)
-        .overlay {
-            if celebrationDeadline != nil {
-                CelebrationOverlay(deadline: celebrationDeadline, size: size)
-            }
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-                centerBreath = 1.0
-            }
-            withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
-                zzzOffsetY = -8.0
-            }
-            // zzzOpacity 与 zzzOffsetY 解耦：上浮线性循环 2.5s，
-            // opacity 用 1.25s autoreverse 淡入淡出，两者交错产生飘散感
-            withAnimation(.easeInOut(duration: 1.25).repeatForever(autoreverses: true)) {
-                zzzOpacity = 0.5
             }
         }
     }
