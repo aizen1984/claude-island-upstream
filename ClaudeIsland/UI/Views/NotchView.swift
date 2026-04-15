@@ -67,6 +67,13 @@ struct NotchView: View {
         sessionMonitor.instances.contains { $0.phase == .processing || $0.phase == .compacting }
     }
 
+    /// The dot-roll Timer is only needed when AnimatedStatusText is on
+    /// screen AND actively rolling (i.e. `isAnyProcessing`). Gating at
+    /// timer creation saves 2 Hz runloop wakeups the rest of the time.
+    private var dotTimerShouldRun: Bool {
+        isAnyProcessing && displayMode == .animated
+    }
+
     /// Sessions that need user attention — completion (.waitingForInput) or
     /// permission ask (.waitingForApproval) — that have NOT yet been
     /// acknowledged by the user (via ⌘⇧U focus or clicking ✅).
@@ -334,11 +341,19 @@ struct NotchView: View {
                 textCelebrationUntil = Date().addingTimeInterval(1.2)
             }
         }
-        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-            // 仅在有会话处于 processing 时滚动 "…" — 没在牛马就别
-            // 强制重建父 body 节省 CPU。
-            guard isAnyProcessing else { return }
-            dotCount = (dotCount + 1) % 4
+        // Dot-roll timer: only alive when BOTH isAnyProcessing is true
+        // AND displayMode is animated. Static mode doesn't render the
+        // rolling dots, and the prior unconditional Timer.publish kept
+        // waking runloop + CA flushing at 2 Hz even with 0 sessions.
+        // `.task(id:)` cancels & restarts only on id flip, so idle view
+        // holds zero wakeups.
+        .task(id: dotTimerShouldRun) {
+            guard dotTimerShouldRun else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                if Task.isCancelled { break }
+                dotCount = (dotCount + 1) % 4
+            }
         }
     }
 
