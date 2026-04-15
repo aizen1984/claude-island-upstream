@@ -28,7 +28,33 @@ struct NotchView: View {
     @State private var statusPhrase: String = ""
     @State private var dotCount: Int = 0
     @State private var wasProcessing: Bool = false
+    @State private var textCelebrationUntil: Date? = nil
     @AppStorage("status.text.preset") private var statusTextPreset: String = "搬砖中"
+
+    /// Primary session phase used to color the status text. Priority:
+    /// attention > compacting > processing > idle.
+    private var primaryStatusPhase: SessionPhase {
+        let instances = sessionMonitor.instances
+        if instances.contains(where: { $0.needsAttention && !ackTracker.isAcknowledged($0.sessionId) }) {
+            return .waitingForInput
+        }
+        if instances.contains(where: { $0.phase == .compacting }) {
+            return .compacting
+        }
+        if instances.contains(where: { $0.phase == .processing }) {
+            return .processing
+        }
+        return .idle
+    }
+
+    private var statusTextColor: Color {
+        switch primaryStatusPhase {
+        case .waitingForInput, .waitingForApproval: return TerminalColors.green
+        case .compacting:                            return TerminalColors.magenta
+        case .processing:                            return TerminalColors.prompt
+        case .idle, .ended:                          return Color.white.opacity(0.6)
+        }
+    }
 
     /// Whether any Claude session is currently processing or compacting
     private var isAnyProcessing: Bool {
@@ -132,30 +158,16 @@ struct NotchView: View {
         let total = attentionCount + runningCount + idleCount
         guard total > 0 else { return 0 }
 
-        // Priority-ordered visibility capping: ✓ → ● → ○
+        // Overflow now occupies a regular ghost-sized slot (rendered as the
+        // "+N" OverflowGhost), so every visible slot is `iconSize` wide.
         let maxVisible = SessionConstellationView.maxVisible
-        let visibleAttention = min(attentionCount, maxVisible)
-        let remainingAfterA = maxVisible - visibleAttention
-        let visibleRunning = min(runningCount, remainingAfterA)
-        let remainingAfterR = remainingAfterA - visibleRunning
-        let visibleIdle = min(idleCount, remainingAfterR)
-        let visibleCount = visibleAttention + visibleRunning + visibleIdle
-        let overflowCount = max(0, total - maxVisible)
+        let slotCount = min(total, maxVisible)
 
-        var width: CGFloat = 0
-        width += CGFloat(visibleAttention) * SessionConstellationView.checkSize
-        width += CGFloat(visibleRunning + visibleIdle) * SessionConstellationView.dotSize
-
-        let slotCount = visibleCount + (overflowCount > 0 ? 1 : 0)
+        let iconSize = SessionConstellationView.iconSize
+        var width = CGFloat(slotCount) * iconSize
         if slotCount > 1 {
             width += CGFloat(slotCount - 1) * SessionConstellationView.spacing
         }
-
-        if overflowCount > 0 {
-            // "·+N" at 9px monospaced black — measured ~16–20pt, budget 18
-            width += 18
-        }
-
         return width
     }
 
@@ -294,7 +306,16 @@ struct NotchView: View {
                 statusPhrase = newPreset
             }
         }
+        .onChange(of: primaryStatusPhase) { oldPhase, newPhase in
+            if oldPhase == .processing,
+               newPhase == .waitingForInput || newPhase == .idle {
+                textCelebrationUntil = Date().addingTimeInterval(1.2)
+            }
+        }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+            // 仅在有会话处于 processing 时滚动 "…" — 没在牛马就别
+            // 强制重建父 body 节省 CPU。
+            guard isAnyProcessing else { return }
             dotCount = (dotCount + 1) % 4
         }
     }
@@ -381,9 +402,12 @@ struct NotchView: View {
                     Text(statusPhrase + "....")
                         .font(.system(size: 10, weight: .black))
                         .opacity(0)
-                    Text(statusPhrase + String(repeating: ".", count: dotCount))
-                        .font(.system(size: 10, weight: .black))
-                        .foregroundColor(TerminalColors.prompt)
+                    AnimatedStatusText(
+                        phrase: statusPhrase,
+                        dotCount: dotCount,
+                        color: statusTextColor,
+                        celebrationUntil: textCelebrationUntil
+                    )
                 }
                 .lineLimit(1)
                 .fixedSize()
@@ -454,11 +478,14 @@ struct NotchView: View {
     private var openedHeaderContent: some View {
         HStack(spacing: 12) {
             if hasAnySessions, !statusPhrase.isEmpty {
-                Text(statusPhrase + String(repeating: ".", count: dotCount))
-                    .font(.system(size: 10, weight: .black))
-                    .foregroundColor(TerminalColors.prompt)
-                    .lineLimit(1)
-                    .padding(.leading, 8)
+                AnimatedStatusText(
+                    phrase: statusPhrase,
+                    dotCount: dotCount,
+                    color: statusTextColor,
+                    celebrationUntil: textCelebrationUntil
+                )
+                .lineLimit(1)
+                .padding(.leading, 8)
             } else {
                 ClaudeCrabIcon(size: 14)
                     .padding(.leading, 8)
@@ -622,5 +649,46 @@ struct NotchView: View {
         }
 
         return false
+    }
+}
+
+// MARK: - Animated Status Text
+
+/// Status phrase with breath opacity, phase-color tint, soft glow, and
+/// a one-shot pulse when long-work completion is celebrated.
+private struct AnimatedStatusText: View {
+    let phrase: String
+    let dotCount: Int
+    let color: Color
+    let celebrationUntil: Date?
+
+    @State private var breath: Double = 0
+    @State private var celebScale: Double = 1.0
+
+    var body: some View {
+        Text(phrase + String(repeating: ".", count: dotCount))
+            .font(.system(size: 10, weight: .black))
+            .foregroundColor(color)
+            .shadow(color: color.opacity(0.9), radius: 4)
+            .shadow(color: color.opacity(0.5), radius: 8)
+            .opacity(0.6 + breath * 0.4)
+            .scaleEffect(celebScale)
+            .animation(.easeOut(duration: 0.3), value: color)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                    breath = 1.0
+                }
+            }
+            .onChange(of: celebrationUntil) { _, newValue in
+                guard newValue != nil else { return }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+                    celebScale = 1.22
+                }
+                // .delay 走 SwiftUI/CA 动画链，view 销毁时 CA 自动取消，
+                // 比 asyncAfter 的裸闭包更安全
+                withAnimation(.easeOut(duration: 0.9).delay(0.3)) {
+                    celebScale = 1.0
+                }
+            }
     }
 }

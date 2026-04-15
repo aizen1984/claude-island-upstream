@@ -44,7 +44,6 @@ class NotchViewModel: ObservableObject {
     @Published var status: NotchStatus = .closed
     @Published var openReason: NotchOpenReason = .unknown
     @Published var contentType: NotchContentType = .instances
-    @Published var isHovering: Bool = false
 
     // Expansion state lives on the ViewModel (not @State in the row views)
     // so NotchView can reactively grow `openedSize` when the status picker
@@ -133,13 +132,6 @@ class NotchViewModel: ObservableObject {
     // MARK: - Event Handling
 
     private func setupEventHandlers() {
-        events.mouseLocation
-            .throttle(for: .milliseconds(50), scheduler: DispatchQueue.main, latest: true)
-            .sink { [weak self] location in
-                self?.handleMouseMove(location)
-            }
-            .store(in: &cancellables)
-
         events.mouseDown
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -156,23 +148,6 @@ class NotchViewModel: ObservableObject {
 
     /// The chat session we're viewing (persists across close/open)
     private var currentChatSession: SessionState?
-
-    private func handleMouseMove(_ location: CGPoint) {
-        let inNotch = geometry.isPointInNotch(location)
-        let inOpened = status == .opened && geometry.isPointInOpenedPanel(location, size: openedSize)
-
-        let newHovering = inNotch || inOpened
-
-        // Only update if changed to prevent unnecessary re-renders
-        guard newHovering != isHovering else { return }
-
-        isHovering = newHovering
-
-        // Customization: hover NO LONGER auto-expands the notch.
-        // The island never enlarges itself — the only way to open it is
-        // an explicit click. isHovering is still tracked so the shadow
-        // effect in NotchView can respond to hover (visual feedback only).
-    }
 
     private func handleMouseDown() {
         let location = NSEvent.mouseLocation
